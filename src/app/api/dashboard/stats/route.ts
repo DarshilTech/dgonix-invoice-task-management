@@ -1,0 +1,130 @@
+import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
+import connectDB from '@/lib/db/connect';
+import { Invoice, Client } from '@/lib/db/models';
+import { verifyRequestAuth } from '@/lib/auth/middleware';
+import { getAccessibleTenantIds } from '@/services/tenantAccess';
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function getLast6Months() {
+  const now = new Date();
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+    return { year: d.getFullYear(), month: d.getMonth() + 1, label: MONTHS[d.getMonth()] };
+  });
+}
+
+const PIE_COLORS: Record<string, string> = {
+  paid: '#22c55e',
+  sent: '#3b82f6',
+  partially_paid: '#8b5cf6',
+  draft: '#94a3b8',
+  overdue: '#ef4444',
+  cancelled: '#d1d5db',
+};
+
+export async function GET(request: NextRequest) {
+  const auth = verifyRequestAuth(request);
+  if (!auth.isValid || !auth.payload || auth.payload.role !== 'admin') {
+    return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+  }
+
+  await connectDB();
+
+  const tenantIds = getAccessibleTenantIds(auth.payload);
+  const months = getLast6Months();
+  const empty = {
+    summary: { totalInvoices: 0, paidInvoices: 0, openInvoices: 0, overdueInvoices: 0, totalClients: 0, totalRevenue: 0 },
+    monthlyRevenue: months.map(m => ({ month: m.label, revenue: 0, invoices: 0 })),
+    monthlyClients: months.map(m => ({ month: m.label, clients: 0 })),
+    statusBreakdown: [],
+    recentInvoices: [],
+  };
+
+  if (tenantIds.length === 0) {
+    return NextResponse.json({ success: true, data: empty });
+  }
+
+  const tenantObjectIds = tenantIds
+    .filter(id => mongoose.Types.ObjectId.isValid(id))
+    .map(id => new mongoose.Types.ObjectId(id));
+
+  const sixMonthsAgo = new Date(months[0].year, months[0].month - 1, 1);
+
+  const [
+    revenueAgg, statusAgg, clientAgg,
+    totalInvoices, paidCount, openCount, overdueCount, totalClients, revenueSum, recentInvoices,
+  ] = await Promise.all([
+    Invoice.aggregate([
+      { $match: { tenantId: { $in: tenantObjectIds }, status: 'paid', invoiceDate: { $gte: sixMonthsAgo } } },
+      { $group: { _id: { year: { $year: '$invoiceDate' }, month: { $month: '$invoiceDate' } }, revenue: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]),
+    Invoice.aggregate([
+      { $match: { tenantId: { $in: tenantObjectIds } } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
+    Client.aggregate([
+      { $match: { tenantId: { $in: tenantObjectIds }, createdAt: { $gte: sixMonthsAgo } } },
+      { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
+      { $sort: { '_id.year': 1, '_id.month': 1 } },
+    ]),
+    Invoice.countDocuments({ tenantId: { $in: tenantIds } }),
+    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: 'paid' }),
+    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: { $in: ['sent', 'partially_paid'] } }),
+    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: 'overdue' }),
+    Client.countDocuments({ tenantId: { $in: tenantIds } }),
+    Invoice.aggregate([
+      { $match: { tenantId: { $in: tenantObjectIds }, status: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$paidAmount' } } },
+    ]),
+    Invoice.find({ tenantId: { $in: tenantIds } })
+      .populate('clientId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .lean(),
+  ]);
+
+  const monthlyRevenue = months.map(m => {
+    const found = revenueAgg.find(r => r._id.year === m.year && r._id.month === m.month);
+    return { month: m.label, revenue: found?.revenue ?? 0, invoices: found?.count ?? 0 };
+  });
+
+  const monthlyClients = months.map(m => {
+    const found = clientAgg.find(c => c._id.year === m.year && c._id.month === m.month);
+    return { month: m.label, clients: found?.count ?? 0 };
+  });
+
+  const statusMap: Record<string, number> = {};
+  statusAgg.forEach(s => { statusMap[s._id] = s.count; });
+  const statusBreakdown = Object.entries(statusMap)
+    .filter(([, v]) => v > 0)
+    .map(([name, value]) => ({ name, label: name.replace('_', ' '), value, color: PIE_COLORS[name] ?? '#94a3b8' }));
+
+  return NextResponse.json({
+    success: true,
+    data: {
+      summary: {
+        totalInvoices,
+        paidInvoices: paidCount,
+        openInvoices: openCount,
+        overdueInvoices: overdueCount,
+        totalClients,
+        totalRevenue: revenueSum[0]?.total ?? 0,
+      },
+      monthlyRevenue,
+      monthlyClients,
+      statusBreakdown,
+      recentInvoices: recentInvoices.map((inv: any) => ({
+        _id: inv._id,
+        invoiceNumber: inv.invoiceNumber,
+        clientName: (inv.clientId as any)?.name ?? 'Unknown',
+        total: inv.totalAmount ?? inv.total,
+        balance: inv.balanceAmount ?? 0,
+        status: inv.status,
+        dueDate: inv.dueDate,
+      })),
+    },
+  });
+}
