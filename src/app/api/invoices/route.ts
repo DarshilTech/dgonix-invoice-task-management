@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
+import { Invoice, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { createInvoiceSchema } from '@/lib/validation/invoice';
 import { generatePaymentReference } from '@/lib/utils/helpers';
 import { calculateInvoiceTotals } from '@/services/invoiceService';
+import { getAccessibleTenantIds, canAccessTenant, getPrimaryTenantId } from '@/services/tenantAccess';
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,21 +28,20 @@ export async function GET(request: NextRequest) {
     const query: Record<string, unknown> = {};
 
     if (auth.payload.role === 'admin') {
+      const tenantIds = getAccessibleTenantIds(auth.payload);
+      if (tenantIds.length === 0) {
+        return NextResponse.json(
+          { success: true, data: { invoices: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } } },
+          { status: 200 }
+        );
+      }
       if (companyId) {
-        const company = await Company.findOne({ _id: companyId, ownerId: auth.payload.userId });
-        if (!company) {
+        if (!canAccessTenant(auth.payload, companyId)) {
           return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
         }
         query.tenantId = companyId;
       } else {
-        const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
-        if (ownedCompanies.length === 0) {
-          return NextResponse.json(
-            { success: true, data: { invoices: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } } },
-            { status: 200 }
-          );
-        }
-        query.tenantId = { $in: ownedCompanies.map((c) => c._id) };
+        query.tenantId = { $in: tenantIds };
       }
     } else {
       query.tenantId = auth.payload.tenantId;
@@ -57,7 +57,6 @@ export async function GET(request: NextRequest) {
     const [invoices, total] = await Promise.all([
       Invoice.find(query)
         .populate('clientId', 'name email')
-        .populate('companyId', 'name email')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -105,27 +104,23 @@ export async function POST(request: NextRequest) {
       discount, discountType, partial, poNumber, invoiceNumber: customInvoiceNumber,
     } = validation.data;
 
-    // Auto-find the user's company if no tenantId supplied
+    // Resolve tenantId: use requested companyId if accessible, else fall back to primary (userId for stale JWTs)
     const rawTenantId = validation.data.tenantId || validation.data.companyId;
-    const company = rawTenantId
-      ? await Company.findOne({ _id: rawTenantId, ownerId: auth.payload.userId }).lean() as { _id: unknown; invoicePrefix?: string } | null
-      : await Company.findOne({ ownerId: auth.payload.userId }).lean() as { _id: unknown; invoicePrefix?: string } | null;
+    const tenantId = rawTenantId && canAccessTenant(auth.payload, rawTenantId)
+      ? rawTenantId
+      : getPrimaryTenantId(auth.payload);
 
-    if (!company) {
-      return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
-    }
-
-    const tenantId = String(company._id);
-
+    // Validate client belongs to this tenant
     const client = await Client.findOne({ _id: clientId, tenantId });
     if (!client) {
       return NextResponse.json({ success: false, error: 'Client not found' }, { status: 404 });
     }
 
+    // Get invoice prefix from CompanyConfig
     const config = await CompanyConfig.findOne({ userId: auth.payload.userId }).lean() as { invoicePrefix?: string } | null;
-    const prefix = config?.invoicePrefix?.trim() || (company as any).invoicePrefix?.trim() || 'INV';
+    const prefix = config?.invoicePrefix?.trim() || 'INV';
 
-    // Derive next sequence from actual invoices — always starts at 1 for new companies
+    // Derive next sequence from existing invoices
     const lastInvoice = await Invoice.findOne({ tenantId })
       .sort({ createdAt: -1 })
       .select('invoiceNumber')
@@ -139,10 +134,9 @@ export async function POST(request: NextRequest) {
 
     const seq = existingMaxSeq + 1;
 
-    // Keep Company.invoiceSequence in sync
-    await Company.updateOne({ _id: tenantId }, { $set: { invoiceSequence: seq } });
+    // Keep invoiceSequence in sync on CompanyConfig
+    await CompanyConfig.updateOne({ userId: auth.payload.userId }, { $set: { invoiceSequence: seq } });
 
-    // Use custom number if provided, otherwise auto-generate
     const invoiceNumber = customInvoiceNumber?.trim()
       ? customInvoiceNumber.trim()
       : `${prefix}-${String(seq).padStart(6, '0')}`;

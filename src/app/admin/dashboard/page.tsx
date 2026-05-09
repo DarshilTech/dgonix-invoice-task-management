@@ -5,7 +5,7 @@ import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import Link from 'next/link';
 import {
   AreaChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 
@@ -21,7 +21,7 @@ type Summary = {
   totalInvoiced: number;
   totalOutstanding: number;
 };
-type MonthRevenue = { month: string; revenue: number; invoices: number };
+type MonthRevenue = { month: string; revenue: number; paid: number; invoices: number };
 type RecentInvoice = {
   _id: string;
   invoiceNumber: string;
@@ -43,9 +43,13 @@ const PERIODS = ['Day', 'Week', 'Month'] as const;
 function RevenueTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg text-sm">
-      <p className="mb-1 font-semibold text-gray-700">{label}</p>
-      <p className="text-primary-600">{fmt(payload[0]?.value ?? 0)}</p>
+    <div className="rounded-xl border border-gray-100 bg-white p-3 shadow-lg text-sm space-y-1">
+      <p className="font-semibold text-gray-700">{label}</p>
+      {payload.map((p: any) => (
+        <p key={p.dataKey} style={{ color: p.color }}>
+          {p.name}: {fmt(p.value ?? 0)}
+        </p>
+      ))}
     </div>
   );
 }
@@ -257,13 +261,15 @@ export default function AdminDashboard() {
             <div className="p-5">
               {!mounted || isLoading ? (
                 <div className="h-52 w-full animate-pulse rounded-lg bg-gray-100" />
-              ) : monthlyRevenue.every((m) => m.revenue === 0) ? (
-                <div className="flex h-52 items-center justify-center text-sm text-gray-400">No data yet</div>
               ) : (
                 <ResponsiveContainer width="100%" height={208}>
                   <AreaChart data={monthlyRevenue} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
                     <defs>
-                      <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="invoicedGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#3b82f6" stopOpacity={0.15} />
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="paidGrad" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%"  stopColor="#22c55e" stopOpacity={0.2} />
                         <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
                       </linearGradient>
@@ -273,7 +279,10 @@ export default function AdminDashboard() {
                     <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={44}
                       tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
                     <Tooltip content={<RevenueTooltip />} />
-                    <Area type="monotone" dataKey="revenue" stroke="#22c55e" strokeWidth={2} fill="url(#revGrad)"
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                    <Area type="monotone" dataKey="revenue" name="Invoiced" stroke="#3b82f6" strokeWidth={2} fill="url(#invoicedGrad)"
+                      dot={false} activeDot={{ r: 4, fill: '#3b82f6', stroke: '#fff', strokeWidth: 2 }} />
+                    <Area type="monotone" dataKey="paid" name="Collected" stroke="#22c55e" strokeWidth={2} fill="url(#paidGrad)"
                       dot={false} activeDot={{ r: 4, fill: '#22c55e', stroke: '#fff', strokeWidth: 2 }} />
                   </AreaChart>
                 </ResponsiveContainer>

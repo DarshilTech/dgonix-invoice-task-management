@@ -48,8 +48,8 @@ export interface IClient extends Document {
 
 const clientSchema = new Schema<IClient>(
   {
-    tenantId:  { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
-    companyId: { type: Schema.Types.ObjectId, ref: 'Company', required: true, index: true },
+    tenantId:  { type: Schema.Types.ObjectId, required: true, index: true },
+    companyId: { type: Schema.Types.ObjectId, index: true },
 
     name:            { type: String, required: true },
     number:          String,

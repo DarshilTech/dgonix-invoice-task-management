@@ -12,7 +12,13 @@ export interface ICompanyConfig extends Document {
   country?: string;
   logo?: string;
   taxId?: string;
+  businessNumber?: string;
   invoicePrefix?: string;
+  invoiceSequence: number;
+  subdomain?: string;
+  language?: string;
+  currency?: string;
+  isActive: boolean;
   fromEmail?: string;
   senderName?: string;
   smtpHost?: string;
@@ -45,7 +51,13 @@ const companyConfigSchema = new Schema<ICompanyConfig>(
     country: String,
     logo: String,
     taxId: String,
+    businessNumber: String,
     invoicePrefix: { type: String, default: 'INV' },
+    invoiceSequence: { type: Number, default: 0 },
+    subdomain: { type: String, sparse: true, unique: true, lowercase: true, trim: true },
+    language: { type: String, default: 'en' },
+    currency: { type: String, default: 'USD' },
+    isActive: { type: Boolean, default: true },
     fromEmail: String,
     senderName: String,
     smtpHost: String,

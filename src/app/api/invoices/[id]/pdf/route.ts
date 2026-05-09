@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
+import { Invoice, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
+import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
 export const maxDuration = 60;
 
@@ -18,8 +19,8 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     let invoice;
     if (auth.payload.role === 'admin') {
-      const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
-      invoice = await Invoice.findOne({ _id: params.id, tenantId: { $in: ownedCompanies.map((c) => c._id) } });
+      const tenantIds = getAccessibleTenantIds(auth.payload);
+      invoice = await Invoice.findOne({ _id: params.id, tenantId: { $in: tenantIds } });
     } else {
       invoice = await Invoice.findOne({ _id: params.id, tenantId: auth.payload.tenantId, clientId: auth.payload.clientId });
     }
@@ -28,35 +29,29 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Fetch related data
-    const [company, client, config] = await Promise.all([
-      Company.findById(invoice.tenantId),
+    const [client, config] = await Promise.all([
       Client.findById(invoice.clientId),
       CompanyConfig.findOne({ userId: auth.payload.userId }),
     ]);
 
-    if (!company || !client) {
-      return NextResponse.json(
-        { success: false, error: 'Invoice data incomplete' },
-        { status: 400 }
-      );
+    if (!client) {
+      return NextResponse.json({ success: false, error: 'Invoice data incomplete' }, { status: 400 });
     }
 
-    // Generate PDF
     const pdf = await generateInvoicePDF({
       invoiceNumber: invoice.invoiceNumber,
       invoiceDate: invoice.invoiceDate.toISOString(),
       dueDate: invoice.dueDate.toISOString(),
       paymentReference: invoice.paymentReference,
       company: {
-        name: config?.companyName || company.name,
-        email: config?.companyEmail || company.email,
-        address: config?.address || company.address,
-        city: config?.city || company.city,
-        state: config?.state || company.state,
-        zip: config?.zip || company.zip,
-        country: config?.country || company.country,
-        logo: config?.logo || company.logo,
+        name: config?.companyName || '',
+        email: config?.companyEmail || '',
+        address: config?.address,
+        city: config?.city,
+        state: config?.state,
+        zip: config?.zip,
+        country: config?.country,
+        logo: config?.logo,
         website: config?.website,
         wiseTransferRef: config?.wiseTransferRef,
       },
@@ -86,8 +81,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       wiseInstructions: invoice.wiseInstructions,
     });
 
-    // Return PDF with appropriate headers
-    const response = new NextResponse(Buffer.from(pdf) as any, {
+    return new NextResponse(Buffer.from(pdf) as any, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
@@ -95,8 +89,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         'Cache-Control': 'no-cache, no-store, must-revalidate',
       },
     });
-
-    return response;
   } catch (error) {
     console.error('PDF generation error:', error);
     return NextResponse.json({ success: false, error: 'Failed to generate PDF' }, { status: 500 });

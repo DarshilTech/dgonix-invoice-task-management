@@ -1,11 +1,27 @@
 import type { JWTPayload } from '@/lib/auth/jwt';
 
+/**
+ * Returns the list of tenant IDs this user can access.
+ * For admin users whose JWT pre-dates the new onboarding flow
+ * (no tenantId/companyId set yet), falls back to userId — because
+ * in the current architecture tenantId === userId for admins.
+ */
 export function getAccessibleTenantIds(payload: JWTPayload): string[] {
-  const tenantIds = [payload.tenantId, payload.companyId, ...(payload.companyIds || [])].filter(
-    (tenantId): tenantId is string => Boolean(tenantId)
-  );
+  const tenantIds = [
+    payload.tenantId,
+    payload.companyId,
+    ...(payload.companyIds || []),
+  ].filter((id): id is string => Boolean(id));
 
-  return Array.from(new Set(tenantIds));
+  const unique = Array.from(new Set(tenantIds));
+
+  // Admin users always own their own tenant (userId == tenantId).
+  // This covers stale JWTs that were issued before onboarding set tenantId.
+  if (unique.length === 0 && payload.role === 'admin' && payload.userId) {
+    return [payload.userId];
+  }
+
+  return unique;
 }
 
 export function getPrimaryTenantId(payload: JWTPayload): string {
@@ -13,7 +29,6 @@ export function getPrimaryTenantId(payload: JWTPayload): string {
   if (!tenantId) {
     throw new Error('No tenant is attached to this user session');
   }
-
   return tenantId;
 }
 

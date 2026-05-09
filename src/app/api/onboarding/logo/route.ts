@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { User, Company, CompanyConfig } from '@/lib/db/models';
+import { CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { uploadToR2 } from '@/lib/storage/r2';
 
@@ -52,18 +52,11 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
-    // ── Primary: write logo into CompanyConfig (same source as Settings page) ──
     await CompanyConfig.findOneAndUpdate(
       { userId: auth.payload.userId },
       { $set: { logo: logoUrl } },
       { upsert: true, new: true }
     );
-
-    // Also update Company logo so it appears in PDFs and invoices
-    const user = await User.findById(auth.payload.userId).select('companyId');
-    if (user?.companyId) {
-      Company.findByIdAndUpdate(user.companyId, { logo: logoUrl }).catch(() => {});
-    }
 
     return NextResponse.json({ success: true, data: { logoUrl } });
   } catch (error) {

@@ -1,7 +1,6 @@
 export { User, type IUser } from './User';
 export { ClientOTP, type IClientOTP } from './ClientOTP';
 export { CompanyConfig, type ICompanyConfig } from './CompanyConfig';
-export { Company, type ICompany } from './Company';
 export { Client, type IClient } from './Client';
 export { Invoice, type IInvoice, type LineItem } from './Invoice';
 export { Payment, type IPayment } from './Payment';

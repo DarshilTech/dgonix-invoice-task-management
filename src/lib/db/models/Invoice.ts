@@ -55,14 +55,11 @@ const invoiceSchema = new Schema<IInvoice>(
   {
     tenantId: {
       type: Schema.Types.ObjectId,
-      ref: 'Company',
       required: true,
       index: true,
     },
     companyId: {
       type: Schema.Types.ObjectId,
-      ref: 'Company',
-      required: true,
       index: true,
     },
     clientId: {

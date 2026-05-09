@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Client, Company, Invoice } from '@/lib/db/models';
+import { Client, Invoice } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { createClientSchema } from '@/lib/validation/client';
+import { getAccessibleTenantIds, canAccessTenant, getPrimaryTenantId } from '@/services/tenantAccess';
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,15 +25,20 @@ export async function GET(request: NextRequest) {
     const query: Record<string, unknown> = {};
 
     if (auth.payload.role === 'admin') {
+      const tenantIds = getAccessibleTenantIds(auth.payload);
+      if (tenantIds.length === 0) {
+        return NextResponse.json(
+          { success: true, data: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } },
+          { status: 200 }
+        );
+      }
       if (companyId) {
-        const company = await Company.findOne({ _id: companyId, ownerId: auth.payload.userId });
-        if (!company) {
+        if (!canAccessTenant(auth.payload, companyId)) {
           return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
         }
-        query.tenantId = company._id;
+        query.tenantId = companyId;
       } else {
-        const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
-        query.tenantId = { $in: ownedCompanies.map((c) => c._id) };
+        query.tenantId = { $in: tenantIds };
       }
     } else {
       query.tenantId = auth.payload.tenantId;
@@ -56,7 +62,6 @@ export async function GET(request: NextRequest) {
       Client.countDocuments(query),
     ]);
 
-    // Aggregate financial totals per client from invoices
     const clientIds = clients.map((c) => c._id);
     const financials = await Invoice.aggregate([
       { $match: { clientId: { $in: clientIds } } },
@@ -96,7 +101,6 @@ export async function POST(request: NextRequest) {
     if (!auth.isValid || !auth.payload || auth.payload.role !== 'admin') {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
-
     await connectDB();
 
     const body = await request.json();
@@ -109,17 +113,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const companyId = validation.data.tenantId || validation.data.companyId;
-
-    const company = await Company.findOne({ _id: companyId, ownerId: auth.payload.userId });
-    if (!company) {
-      return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
-    }
+    const requestedTenantId = validation.data.tenantId || validation.data.companyId;
+    const tenantId = requestedTenantId && canAccessTenant(auth.payload, requestedTenantId)
+      ? requestedTenantId
+      : getPrimaryTenantId(auth.payload);
 
     const client = await Client.create({
       ...validation.data,
-      tenantId: companyId,
-      companyId,
+      tenantId,
+      companyId: tenantId,
     });
 
     return NextResponse.json({ success: true, data: client }, { status: 201 });

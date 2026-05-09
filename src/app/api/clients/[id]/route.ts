@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Client, Company } from '@/lib/db/models';
+import { Client } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { updateClientSchema } from '@/lib/validation/client';
+import { getAccessibleTenantIds, canAccessTenant } from '@/services/tenantAccess';
 
 async function findClientForUser(
   id: string,
   payload: NonNullable<ReturnType<typeof verifyRequestAuth>['payload']>
 ) {
   if (payload.role === 'admin') {
-    const ownedCompanies = await Company.find({ ownerId: payload.userId }).select('_id');
-    return Client.findOne({ _id: id, tenantId: { $in: ownedCompanies.map((c) => c._id) } });
+    const tenantIds = getAccessibleTenantIds(payload);
+    return Client.findOne({ _id: id, tenantId: { $in: tenantIds } });
   }
   if (id !== payload.clientId) return null;
   return Client.findOne({ _id: id, tenantId: payload.tenantId });
@@ -64,8 +65,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       validation.data.tenantId || validation.data.companyId || existing.tenantId.toString();
 
     if (nextTenantId !== existing.tenantId.toString()) {
-      const company = await Company.findOne({ _id: nextTenantId, ownerId: auth.payload.userId });
-      if (!company) {
+      if (!canAccessTenant(auth.payload, nextTenantId)) {
         return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
       }
     }

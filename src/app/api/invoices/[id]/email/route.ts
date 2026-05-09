@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
+import { Invoice, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
 import { sendEmail } from '@/lib/email/transporter';
 import { generateInvoiceEmailHTML } from '@/lib/email/templates';
+import { getAccessibleTenantIds } from '@/services/tenantAccess';
+import { formatDate } from '@/lib/utils/helpers';
 
 export const maxDuration = 60;
-import { formatDate } from '@/lib/utils/helpers';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -19,31 +20,25 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     await connectDB();
 
-    const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
+    const tenantIds = getAccessibleTenantIds(auth.payload);
     const invoice = await Invoice.findOne({
       _id: params.id,
-      tenantId: { $in: ownedCompanies.map((c) => c._id) },
+      tenantId: { $in: tenantIds },
     });
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
     }
 
-    // Fetch company, client, and admin's business config
-    const [company, client, config] = await Promise.all([
-      Company.findById(invoice.tenantId),
+    const [client, config] = await Promise.all([
       Client.findById(invoice.clientId),
       CompanyConfig.findOne({ userId: auth.payload.userId }),
     ]);
 
-    if (!company || !client) {
-      return NextResponse.json(
-        { success: false, error: 'Invoice data incomplete' },
-        { status: 400 }
-      );
+    if (!client) {
+      return NextResponse.json({ success: false, error: 'Invoice data incomplete' }, { status: 400 });
     }
 
-    // Check SMTP configured in CompanyConfig (admin's business settings)
     if (!config?.smtpHost || !config?.smtpUser || !config?.smtpPass) {
       return NextResponse.json(
         { success: false, error: 'Email (SMTP) configuration not set up. Go to Settings → Company to configure.' },
@@ -51,21 +46,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       );
     }
 
-    // Generate PDF
     const pdf = await generateInvoicePDF({
       invoiceNumber: invoice.invoiceNumber,
       invoiceDate: invoice.invoiceDate.toISOString(),
       dueDate: invoice.dueDate.toISOString(),
       paymentReference: invoice.paymentReference,
       company: {
-        name: config?.companyName || company.name,
-        email: config?.companyEmail || company.email,
-        address: config?.address || company.address,
-        city: config?.city || company.city,
-        state: config?.state || company.state,
-        zip: config?.zip || company.zip,
-        country: config?.country || company.country,
-        logo: config?.logo || company.logo,
+        name: config?.companyName || '',
+        email: config?.companyEmail || '',
+        address: config?.address,
+        city: config?.city,
+        state: config?.state,
+        zip: config?.zip,
+        country: config?.country,
+        logo: config?.logo,
         wiseTransferRef: config?.wiseTransferRef,
       },
       client: {
@@ -94,24 +88,22 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       wiseInstructions: invoice.wiseInstructions,
     });
 
-    // Generate email HTML
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const companyName = config?.companyName || '';
     const emailHTML = generateInvoiceEmailHTML({
       clientName: client.name,
       invoiceNumber: invoice.invoiceNumber,
       total: `${invoice.currency} ${invoice.total.toFixed(2)}`,
       dueDate: formatDate(invoice.dueDate),
       paymentReference: invoice.paymentReference,
-      companyName: config?.companyName || company.name,
-      companyEmail: config?.companyEmail || company.email,
+      companyName,
+      companyEmail: config?.companyEmail || '',
       invoiceUrl: `${appUrl}/client/invoices/${invoice._id}`,
     });
 
-    const displayName = config?.companyName || company.name;
-    // Send email
     await sendEmail({
       to: client.email,
-      subject: `Invoice ${invoice.invoiceNumber} from ${displayName}`,
+      subject: `Invoice ${invoice.invoiceNumber} from ${companyName}`,
       html: emailHTML,
       attachments: [
         {
@@ -131,17 +123,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       },
     });
 
-    // Update invoice status to 'sent'
     invoice.status = 'sent';
     invoice.sentAt = new Date();
     await invoice.save();
 
     return NextResponse.json(
-      {
-        success: true,
-        message: 'Invoice sent successfully',
-        data: invoice,
-      },
+      { success: true, message: 'Invoice sent successfully', data: invoice },
       { status: 200 }
     );
   } catch (error) {

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Client, Company } from '@/lib/db/models';
+import { Invoice, Client } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
+import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
 
   await connectDB();
 
-  const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id').lean();
+  const tenantIds = getAccessibleTenantIds(auth.payload);
   const months = getLast6Months();
 
   const empty = {
@@ -44,11 +45,11 @@ export async function GET(request: NextRequest) {
     recentInvoices: [],
   };
 
-  if (ownedCompanies.length === 0) {
+  if (tenantIds.length === 0) {
     return NextResponse.json({ success: true, data: empty });
   }
 
-  const tenantObjectIds = ownedCompanies.map((c) => c._id as mongoose.Types.ObjectId);
+  const tenantObjectIds = tenantIds.map((id) => new mongoose.Types.ObjectId(id));
   const sixMonthsAgo = new Date(months[0].year, months[0].month - 1, 1);
 
   const [
@@ -63,18 +64,15 @@ export async function GET(request: NextRequest) {
     financialAgg,
     recentInvoices,
   ] = await Promise.all([
-    // Monthly paid revenue for chart
     Invoice.aggregate([
-      { $match: { tenantId: { $in: tenantObjectIds }, status: 'paid', invoiceDate: { $gte: sixMonthsAgo } } },
-      { $group: { _id: { year: { $year: '$invoiceDate' }, month: { $month: '$invoiceDate' } }, revenue: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
+      { $match: { tenantId: { $in: tenantObjectIds }, invoiceDate: { $gte: sixMonthsAgo } } },
+      { $group: { _id: { year: { $year: '$invoiceDate' }, month: { $month: '$invoiceDate' } }, revenue: { $sum: '$totalAmount' }, paid: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
-    // Status breakdown
     Invoice.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
-    // Monthly clients for spark (unused in UI but keep for future)
     Client.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds }, createdAt: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
@@ -84,7 +82,6 @@ export async function GET(request: NextRequest) {
     Invoice.countDocuments({ tenantId: { $in: tenantObjectIds }, status: { $in: ['sent', 'partially_paid'] } }),
     Invoice.countDocuments({ tenantId: { $in: tenantObjectIds }, status: 'overdue' }),
     Client.countDocuments({ tenantId: { $in: tenantObjectIds } }),
-    // Financial totals: total invoiced, total paid, total outstanding
     Invoice.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds } } },
       {
@@ -104,12 +101,12 @@ export async function GET(request: NextRequest) {
   ]);
 
   const monthlyRevenue = months.map(m => {
-    const found = revenueAgg.find(r => r._id.year === m.year && r._id.month === m.month);
-    return { month: m.label, revenue: found?.revenue ?? 0, invoices: found?.count ?? 0 };
+    const found = revenueAgg.find((r: any) => r._id.year === m.year && r._id.month === m.month);
+    return { month: m.label, revenue: found?.revenue ?? 0, paid: found?.paid ?? 0, invoices: found?.count ?? 0 };
   });
 
   const statusMap: Record<string, number> = {};
-  statusAgg.forEach(s => { statusMap[s._id] = s.count; });
+  statusAgg.forEach((s: any) => { statusMap[s._id] = s.count; });
   const statusBreakdown = Object.entries(statusMap)
     .filter(([, v]) => v > 0)
     .map(([name, value]) => ({ name, label: name.replace('_', ' '), value, color: PIE_COLORS[name] ?? '#94a3b8' }));

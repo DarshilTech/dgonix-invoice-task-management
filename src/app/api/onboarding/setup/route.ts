@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { User, Company, CompanyConfig } from '@/lib/db/models';
+import { User, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { z } from 'zod';
 
@@ -30,7 +30,6 @@ export async function POST(request: NextRequest) {
     }
 
     const { companyName, subdomain, language, currency } = validation.data;
-    const invoicePrefix = "INV";
 
     await connectDB();
 
@@ -39,54 +38,42 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
 
-    // Update or create the Company record
-    let company;
-    const existingCompany = user.companyId
-      ? await Company.findOne({ _id: user.companyId, ownerId: user._id })
-      : null;
-
-    if (existingCompany) {
-      existingCompany.name = companyName;
-      existingCompany.subdomain = subdomain;
-      existingCompany.language = language;
-      existingCompany.currency = currency;
-      existingCompany.invoicePrefix = invoicePrefix;
-      company = await existingCompany.save();
-    } else {
-      // Check subdomain uniqueness only when creating a new company
-      const taken = await Company.findOne({ subdomain });
+    // Check subdomain uniqueness (skip if this user already owns it)
+    const existingConfig = await CompanyConfig.findOne({ userId: user._id });
+    if (existingConfig?.subdomain !== subdomain) {
+      const taken = await CompanyConfig.findOne({ subdomain, userId: { $ne: user._id } });
       if (taken) {
         return NextResponse.json({ success: false, error: 'Subdomain is already taken' }, { status: 400 });
       }
-
-      company = await Company.create({
-        ownerId: user._id,
-        name: companyName,
-        email: user.email,
-        fromEmail: user.email,
-        subdomain,
-        language,
-        currency,
-        invoicePrefix,
-      });
     }
 
-    // Keep CompanyConfig in sync (used by settings page and PDF generation)
+    // Upsert CompanyConfig — userId is the single source of truth
     await CompanyConfig.findOneAndUpdate(
       { userId: user._id },
-      { $set: { companyName, fromEmail: user.email, invoicePrefix } },
+      {
+        $set: {
+          companyName,
+          companyEmail: user.email,
+          fromEmail: user.email,
+          invoicePrefix: 'INV',
+          subdomain,
+          language,
+          currency,
+        },
+      },
       { upsert: true, new: true }
     );
 
-    // Link company to user
-    user.tenantId = company._id as typeof user.tenantId;
-    user.companyId = company._id as typeof user.companyId;
-    user.companyIds = [company._id as (typeof user.companyIds)[0]];
+    // Use user._id as tenantId — no separate Company document needed
+    const tenantId = user._id;
+    user.tenantId = tenantId as typeof user.tenantId;
+    user.companyId = tenantId as typeof user.companyId;
+    user.companyIds = [tenantId as (typeof user.companyIds)[0]];
     await user.save();
 
     return NextResponse.json({
       success: true,
-      data: { tenantId: company._id.toString(), companyName, subdomain },
+      data: { tenantId: tenantId.toString(), companyName, subdomain },
     });
   } catch (error) {
     console.error('Onboarding setup error:', error);

@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Company } from '@/lib/db/models';
+import { Invoice } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { updateInvoiceSchema } from '@/lib/validation/invoice';
 import { calculateInvoiceTotals, refreshInvoicePaymentState } from '@/services/invoiceService';
-
-async function getOwnedCompanyIds(userId: string) {
-  const companies = await Company.find({ ownerId: userId }).select('_id');
-  return companies.map((c) => c._id);
-}
+import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
 async function findInvoiceForUser(
   id: string,
   payload: NonNullable<ReturnType<typeof verifyRequestAuth>['payload']>
 ) {
   if (payload.role === 'admin') {
-    const companyIds = await getOwnedCompanyIds(payload.userId);
-    return Invoice.findOne({ _id: id, tenantId: { $in: companyIds } });
+    const tenantIds = getAccessibleTenantIds(payload);
+    return Invoice.findOne({ _id: id, tenantId: { $in: tenantIds } });
   }
   return Invoice.findOne({ _id: id, tenantId: payload.tenantId, clientId: payload.clientId });
 }
@@ -37,7 +33,6 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     await invoice.populate('clientId');
-    await invoice.populate('companyId');
 
     return NextResponse.json({ success: true, data: invoice }, { status: 200 });
   } catch (error) {
@@ -96,8 +91,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       invoice.balanceAmount  = Math.max(0, totals.totalAmount - invoice.paidAmount);
     }
 
-    if (data.invoiceDate)          invoice.invoiceDate  = new Date(data.invoiceDate);
-    if (data.dueDate)              invoice.dueDate      = new Date(data.dueDate);
+    if (data.invoiceDate)                invoice.invoiceDate  = new Date(data.invoiceDate);
+    if (data.dueDate)                    invoice.dueDate      = new Date(data.dueDate);
     if (data.taxRate !== undefined)      invoice.taxRate      = data.taxRate;
     if (data.discount !== undefined)     invoice.discount     = data.discount;
     if (data.discountType !== undefined) invoice.discountType = data.discountType;
@@ -110,19 +105,10 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     await invoice.save();
     await refreshInvoicePaymentState(invoice._id, invoice.tenantId);
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: invoice,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, data: invoice }, { status: 200 });
   } catch (error) {
     console.error('Update invoice error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to update invoice' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update invoice' }, { status: 500 });
   }
 }
 
@@ -151,18 +137,9 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     await Invoice.deleteOne({ _id: params.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: 'Invoice deleted successfully',
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, message: 'Invoice deleted successfully' }, { status: 200 });
   } catch (error) {
     console.error('Delete invoice error:', error);
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete invoice' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to delete invoice' }, { status: 500 });
   }
 }

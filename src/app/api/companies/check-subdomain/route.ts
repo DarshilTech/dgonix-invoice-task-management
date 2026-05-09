@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Company } from '@/lib/db/models';
+import { CompanyConfig } from '@/lib/db/models';
 
 export async function GET(request: NextRequest) {
   const subdomain = request.nextUrl.searchParams.get('subdomain')?.toLowerCase().trim();
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
 
   try {
     await connectDB();
-    const existing = await Company.findOne({ subdomain });
+    const existing = await CompanyConfig.findOne({ subdomain });
     return NextResponse.json({ available: !existing });
   } catch (error) {
     console.error('Subdomain check error:', error);

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import path from 'path';
 import mongoose from 'mongoose';
-import { User, Company, Client, Invoice, Payment, PaymentMethod } from '../src/lib/db/models';
+import { User, CompanyConfig, Client, Invoice, Payment, PaymentMethod } from '../src/lib/db/models';
 import { hashPassword } from '../src/lib/auth/password';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -45,7 +45,7 @@ async function seed() {
     // Recreate indexes by syncing all models
     await Promise.all([
       User.collection.dropIndexes().catch(() => {}),
-      Company.collection.dropIndexes().catch(() => {}),
+      CompanyConfig.collection.dropIndexes().catch(() => {}),
       Client.collection.dropIndexes().catch(() => {}),
       Invoice.collection.dropIndexes().catch(() => {}),
       Payment.collection.dropIndexes().catch(() => {}),
@@ -54,7 +54,7 @@ async function seed() {
 
     await Promise.all([
       User.syncIndexes(),
-      Company.syncIndexes(),
+      CompanyConfig.syncIndexes(),
       Client.syncIndexes(),
       Invoice.syncIndexes(),
       Payment.syncIndexes(),
@@ -62,10 +62,35 @@ async function seed() {
     ]);
     console.log('✅ Synced all indexes');
 
-    // Create Admin User's Company
-    const company = await Company.create({
-      name: 'Acme Corporation',
-      email: 'billing@acme.com',
+    // Create Admin User first (tenantId = admin._id in new architecture)
+    const adminPassword = 'AdminPass123!';
+    const adminPasswordHash = await hashPassword(adminPassword);
+    const admin = await User.create({
+      email: 'admin@acme.com',
+      passwordHash: adminPasswordHash,
+      firstName: 'John',
+      lastName: 'Admin',
+      role: 'admin',
+      isGlobalAdmin: true,
+      emailVerified: true,
+      isActive: true,
+    });
+
+    // tenantId = admin._id (userId is the tenant identifier)
+    const tenantId = admin._id;
+    admin.tenantId = tenantId as typeof admin.tenantId;
+    admin.companyId = tenantId as typeof admin.companyId;
+    admin.companyIds = [tenantId as (typeof admin.companyIds)[0]];
+    await admin.save();
+
+    console.log('✅ Created Admin User:', admin.email);
+    console.log('   Password:', adminPassword);
+
+    // Create CompanyConfig for admin
+    await CompanyConfig.create({
+      userId: admin._id,
+      companyName: 'Acme Corporation',
+      companyEmail: 'billing@acme.com',
       phone: '+1 (555) 123-4567',
       website: 'https://acme.example.com',
       address: '123 Business Ave',
@@ -79,32 +104,17 @@ async function seed() {
       wiseTransferRef: 'ACME-TRANSFER',
       fromEmail: 'billing@acme.com',
       invoicePrefix: 'ACME',
-    });
-    console.log('✅ Created Company:', company.name);
-
-    // Create Admin User
-    const adminPassword = 'AdminPass123!';
-    const adminPasswordHash = await hashPassword(adminPassword);
-    const admin = await User.create({
-      tenantId: company._id,
-      email: 'admin@acme.com',
-      passwordHash: adminPasswordHash,
-      firstName: 'John',
-      lastName: 'Admin',
-      role: 'admin',
-      companyIds: [company._id],
-      isGlobalAdmin: true,
-      emailVerified: true,
+      currency: 'USD',
+      language: 'en',
       isActive: true,
     });
-    console.log('✅ Created Admin User:', admin.email);
-    console.log('   Password:', adminPassword);
+    console.log('✅ Created CompanyConfig: Acme Corporation');
 
     // Create Sample Clients
     const clients = await Client.insertMany([
       {
-        companyId: company._id,
-        tenantId: company._id,
+        companyId: tenantId,
+        tenantId: tenantId,
         name: 'TechStart Inc',
         email: 'billing@techstart.com',
         contactPerson: 'Sarah Johnson',
@@ -119,8 +129,8 @@ async function seed() {
         portalAccess: true,
       },
       {
-        companyId: company._id,
-        tenantId: company._id,
+        companyId: tenantId,
+        tenantId: tenantId,
         name: 'Creative Agency LLC',
         email: 'accounts@creativeagency.com',
         contactPerson: 'Michael Chen',
@@ -135,8 +145,8 @@ async function seed() {
         portalAccess: true,
       },
       {
-        companyId: company._id,
-        tenantId: company._id,
+        companyId: tenantId,
+        tenantId: tenantId,
         name: 'Global Solutions Ltd',
         email: 'finance@globalsolutions.com',
         contactPerson: 'Emma Watson',
@@ -156,38 +166,38 @@ async function seed() {
     // Create Client Portal Users
     const clientUsers = await User.insertMany([
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         email: 'sarah@techstart.com',
         passwordHash: await hashPassword('ClientPass123!'),
         firstName: 'Sarah',
         lastName: 'Johnson',
         role: 'client',
         clientId: clients[0]._id,
-        companyId: company._id,
+        companyId: tenantId,
         emailVerified: true,
         isActive: true,
       },
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         email: 'michael@creativeagency.com',
         passwordHash: await hashPassword('ClientPass123!'),
         firstName: 'Michael',
         lastName: 'Chen',
         role: 'client',
         clientId: clients[1]._id,
-        companyId: company._id,
+        companyId: tenantId,
         emailVerified: true,
         isActive: true,
       },
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         email: 'emma@globalsolutions.com',
         passwordHash: await hashPassword('ClientPass123!'),
         firstName: 'Emma',
         lastName: 'Watson',
         role: 'client',
         clientId: clients[2]._id,
-        companyId: company._id,
+        companyId: tenantId,
         emailVerified: true,
         isActive: true,
       },
@@ -199,19 +209,19 @@ async function seed() {
 
     const paymentMethods = await PaymentMethod.insertMany([
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         name: 'Bank Transfer',
         description: 'Manual bank transfer with invoice reference',
         isActive: true,
       },
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         name: 'Cash',
         description: 'Cash collected and recorded by an admin',
         isActive: true,
       },
       {
-        tenantId: company._id,
+        tenantId: tenantId,
         name: 'UPI',
         description: 'UPI transfer with payment proof',
         isActive: true,
@@ -222,8 +232,8 @@ async function seed() {
     // Create Sample Invoices
     const invoices = await Invoice.insertMany([
       {
-        tenantId: company._id,
-        companyId: company._id,
+        tenantId: tenantId,
+        companyId: tenantId,
         clientId: clients[0]._id,
         invoiceNumber: 'ACME-001',
         invoiceDate: new Date('2026-05-01'),
@@ -259,8 +269,8 @@ async function seed() {
         sentAt: new Date(),
       },
       {
-        tenantId: company._id,
-        companyId: company._id,
+        tenantId: tenantId,
+        companyId: tenantId,
         clientId: clients[1]._id,
         invoiceNumber: 'ACME-002',
         invoiceDate: new Date('2026-04-15'),
@@ -297,8 +307,8 @@ async function seed() {
         paidAt: new Date('2026-05-10'),
       },
       {
-        tenantId: company._id,
-        companyId: company._id,
+        tenantId: tenantId,
+        companyId: tenantId,
         clientId: clients[2]._id,
         invoiceNumber: 'ACME-003',
         invoiceDate: new Date('2026-05-05'),
@@ -335,8 +345,8 @@ async function seed() {
     const payments = await Payment.insertMany([
       {
         invoiceId: invoices[1]._id,
-        tenantId: company._id,
-        companyId: company._id,
+        tenantId: tenantId,
+        companyId: tenantId,
         clientId: clients[1]._id,
         amount: 10800,
         currency: 'USD',
@@ -352,8 +362,8 @@ async function seed() {
       },
       {
         invoiceId: invoices[0]._id,
-        tenantId: company._id,
-        companyId: company._id,
+        tenantId: tenantId,
+        companyId: tenantId,
         clientId: clients[0]._id,
         amount: 31680,
         currency: 'USD',
@@ -371,7 +381,7 @@ async function seed() {
 
     console.log('\n📊 Seed Data Summary:');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('Companies:', 1);
+    console.log('Company Config: 1 (tenantId = admin._id)');
     console.log('Admin Users:', 1);
     console.log('Client Companies:', clients.length);
     console.log('Client Portal Users:', clientUsers.length);
