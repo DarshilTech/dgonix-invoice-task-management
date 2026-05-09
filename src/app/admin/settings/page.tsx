@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import Image from 'next/image';
 import { RegionSelect } from '@/components/ui/RegionSelect';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 type Tab = 'profile' | 'company' | 'payments';
 
@@ -248,10 +249,14 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="py-6">
-      <div className="mb-8">
-        <h1 className="section-title">Settings</h1>
-        <p className="section-subtitle">Manage your profile, company configuration, and preferences</p>
-      </div>
+      <PageHeader
+        title="Settings"
+        subtitle="Manage your profile, company configuration, and preferences"
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/admin/dashboard', home: true },
+          { label: 'Settings' },
+        ]}
+      />
 
       <div className="mb-6 flex gap-1 rounded-lg border border-gray-200 bg-gray-50 p-1">
         {tabs.map((tab) => (
@@ -274,7 +279,22 @@ export default function AdminSettingsPage() {
       {activeTab === 'profile' && (
         <div className="space-y-6 py-6">
           {profileLoading ? (
-            <div className="card"><div className="card-body text-center text-gray-500">Loading...</div></div>
+            <div className="space-y-4">
+              {[1, 2].map((i) => (
+                <div key={i} className="card">
+                  <div className="card-header"><div className="skeleton h-4 w-36" /></div>
+                  <div className="card-body grid gap-4 md:grid-cols-2">
+                    {[1, 2, 3, 4].map((j) => (
+                      <div key={j} className={j === 3 || j === 4 ? 'md:col-span-2' : ''}>
+                        <div className="skeleton mb-1.5 h-3 w-24" />
+                        <div className="skeleton h-9 w-full" />
+                      </div>
+                    ))}
+                    <div className="md:col-span-2 flex justify-end"><div className="skeleton h-9 w-28" /></div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               {profileMsg && (
@@ -333,7 +353,21 @@ export default function AdminSettingsPage() {
       {activeTab === 'company' && (
         <div className="space-y-6 py-6">
           {configLoading ? (
-            <div className="card"><div className="card-body text-center text-gray-500">Loading...</div></div>
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="card">
+                  <div className="card-header"><div className="skeleton h-4 w-40" /></div>
+                  <div className="card-body grid gap-4 md:grid-cols-2">
+                    {[1, 2, 3, 4].map((j) => (
+                      <div key={j}>
+                        <div className="skeleton mb-1.5 h-3 w-24" />
+                        <div className="skeleton h-9 w-full" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               {configMsg && (

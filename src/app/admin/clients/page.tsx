@@ -125,7 +125,7 @@ export default function AdminClientsPage() {
       <div className="flex flex-wrap items-center gap-2">
         <input
           name="search"
-          className="input max-w-[180px] text-sm"
+          className="input w-full sm:max-w-[180px] text-sm"
           placeholder="Filter…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -168,92 +168,97 @@ export default function AdminClientsPage() {
           <div className="divide-y divide-gray-50">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center gap-4 px-5 py-4">
-                <div className="h-4 w-4 rounded bg-gray-100 animate-pulse" />
-                <div className="h-4 w-40 rounded bg-gray-100 animate-pulse" />
-                <div className="h-4 w-48 rounded bg-gray-100 animate-pulse flex-1" />
-                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
-                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
-                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
-                <div className="h-4 w-24 rounded bg-gray-100 animate-pulse" />
+                <div className="skeleton h-4 w-4 rounded" />
+                <div className="skeleton h-4 w-36" />
+                <div className="skeleton h-4 flex-1" />
+                <div className="skeleton h-4 w-20" />
+                <div className="skeleton h-4 w-20" />
               </div>
             ))}
           </div>
         ) : clients.length === 0 ? (
           <div className="px-5 py-16 text-center text-sm text-gray-400">No clients found</div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="w-10 px-4 py-3">
-                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Name <SortIcon />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Contact Email <SortIcon />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    ID Number <SortIcon />
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Balance <SortIcon />
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Paid to Date <SortIcon />
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Date Created <SortIcon />
-                  </th>
-                  <th className="w-28 px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {clients.map((c) => (
-                  <tr key={c._id} className="hover:bg-gray-50/40 transition-colors">
-                    <td className="px-4 py-3">
-                      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/clients/${c._id}/edit`}
-                        className="font-medium text-primary-600 hover:text-primary-700 hover:underline"
-                      >
+          <>
+            {/* Mobile cards */}
+            <div className="divide-y divide-gray-100 sm:hidden">
+              {clients.map((c) => (
+                <div key={c._id} className="px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link href={`/admin/clients/${c._id}/edit`} className="block truncate font-medium text-primary-600 hover:underline">
                         {c.name}
                       </Link>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">
-                      <span className="flex items-center">
-                        {c.email}
-                        <CopyButton text={c.email} />
+                      <p className="mt-0.5 flex items-center text-sm text-gray-500">
+                        {c.email}<CopyButton text={c.email} />
+                      </p>
+                      <p className="mt-1 text-xs text-gray-400">{fmtDate(c.createdAt)}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-gray-900">{fmt(c.balance)}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Paid: {fmt(c.paidToDate)}</p>
+                      <span className={`mt-1 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${c.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {c.status}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{c.idNumber || '—'}</td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.balance)}</td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.paidToDate)}</td>
-                    <td className="px-4 py-3 text-gray-500">{fmtDate(c.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <ActionMenu items={[
-                        {
-                          label: 'Edit',
-                          icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>,
-                          onClick: () => router.push(`/admin/clients/${c._id}/edit`),
-                        },
-                        { separator: true },
-                        {
-                          label: 'Delete',
-                          icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>,
-                          onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }),
-                          danger: true,
-                        },
-                      ]} />
-                    </td>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex justify-end">
+                    <ActionMenu items={[
+                      { label: 'Edit', icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>, onClick: () => router.push(`/admin/clients/${c._id}/edit`) },
+                      { separator: true },
+                      { label: 'Delete', icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>, onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }), danger: true },
+                    ]} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <th className="w-10 px-4 py-3">
+                      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Name <SortIcon /></th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Contact Email <SortIcon /></th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">ID Number <SortIcon /></th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Balance <SortIcon /></th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">Paid to Date <SortIcon /></th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Date Created <SortIcon /></th>
+                    <th className="w-28 px-4 py-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {clients.map((c) => (
+                    <tr key={c._id} className="hover:bg-gray-50/40 transition-colors">
+                      <td className="px-4 py-3"><input type="checkbox" className="h-4 w-4 rounded border-gray-300" /></td>
+                      <td className="px-4 py-3">
+                        <Link href={`/admin/clients/${c._id}/edit`} className="font-medium text-primary-600 hover:text-primary-700 hover:underline">
+                          {c.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        <span className="flex items-center">{c.email}<CopyButton text={c.email} /></span>
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{c.idNumber || '—'}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.balance)}</td>
+                      <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.paidToDate)}</td>
+                      <td className="px-4 py-3 text-gray-500">{fmtDate(c.createdAt)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <ActionMenu items={[
+                          { label: 'Edit', icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>, onClick: () => router.push(`/admin/clients/${c._id}/edit`) },
+                          { separator: true },
+                          { label: 'Delete', icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>, onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }), danger: true },
+                        ]} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

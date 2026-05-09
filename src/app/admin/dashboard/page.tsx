@@ -7,6 +7,7 @@ import {
   AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { OnboardingModal } from '@/components/onboarding/OnboardingModal';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -151,6 +152,11 @@ export default function AdminDashboard() {
       </Suspense>
 
       <div className="space-y-5 py-6">
+        <PageHeader
+          title="Dashboard"
+          breadcrumbs={[{ label: 'Dashboard', home: true }]}
+        />
+
         {/* ── Top bar ────────────────────────────────────────────────────── */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-gray-500">Welcome! Glad to see you.</p>

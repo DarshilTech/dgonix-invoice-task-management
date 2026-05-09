@@ -223,7 +223,7 @@ export default function AdminInvoicesPage() {
           placeholder="Filter"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="h-9 w-40 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
+          className="h-9 w-full sm:w-40 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 placeholder:text-gray-400 focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
         />
 
         {/* Lifecycle */}
@@ -305,41 +305,84 @@ export default function AdminInvoicesPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <DataTable<Invoice>
-        columns={columns}
-        data={sorted}
-        loading={isLoading}
-        loadingRows={limit}
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSort={toggleSort}
-        selected={selected}
-        onSelectAll={toggleAll}
-        onSelectRow={toggleOne}
-        rowKey={(inv) => inv._id}
-        visibleCols={visibleCols}
-        emptyText="No invoices found"
-        rowAction={(inv) => (
-          <ActionMenu items={[
-            {
-              label: 'View',
-              href: `/admin/invoices/${inv._id}`,
-              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>,
-            },
-            {
-              label: 'Edit',
-              href: `/admin/invoices/${inv._id}/edit`,
-              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>,
-            },
-            {
-              label: 'Download PDF',
-              href: `/api/invoices/${inv._id}/pdf`,
-              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
-            },
-          ]} />
+      {/* Mobile cards */}
+      <div className="sm:hidden space-y-2">
+        {isLoading ? (
+          Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="rounded-xl border border-gray-200 bg-white p-4 space-y-2">
+              <div className="flex justify-between">
+                <div className="skeleton h-4 w-24" />
+                <div className="skeleton h-5 w-16 rounded-full" />
+              </div>
+              <div className="skeleton h-4 w-32" />
+              <div className="flex justify-between">
+                <div className="skeleton h-4 w-20" />
+                <div className="skeleton h-4 w-20" />
+              </div>
+            </div>
+          ))
+        ) : sorted.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white px-5 py-12 text-center text-sm text-gray-400">No invoices found</div>
+        ) : (
+          sorted.map((inv) => (
+            <div key={inv._id} className="rounded-xl border border-gray-200 bg-white p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <Link href={`/admin/invoices/${inv._id}`} className="font-semibold text-primary-600 hover:underline">
+                    {inv.invoiceNumber}
+                  </Link>
+                  <p className="mt-0.5 text-sm text-gray-500 truncate">{inv.clientId?.name ?? '—'}</p>
+                </div>
+                <span className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_BADGE[inv.status] ?? 'bg-gray-100 text-gray-500'}`}>
+                  {inv.status.replace('_', ' ')}
+                </span>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-gray-500">Due {fmtDate(inv.dueDate)}</span>
+                <div className="text-right">
+                  <span className="font-semibold text-gray-900">{fmt(inv.totalAmount ?? inv.total)}</span>
+                  {(inv.balanceAmount ?? 0) > 0 && (
+                    <p className="text-xs text-amber-600">Balance: {fmt(inv.balanceAmount)}</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-2 flex justify-end">
+                <ActionMenu items={[
+                  { label: 'View', href: `/admin/invoices/${inv._id}`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> },
+                  { label: 'Edit', href: `/admin/invoices/${inv._id}/edit`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg> },
+                  { label: 'Download PDF', href: `/api/invoices/${inv._id}/pdf`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> },
+                ]} />
+              </div>
+            </div>
+          ))
         )}
-      />
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden sm:block">
+        <DataTable<Invoice>
+          columns={columns}
+          data={sorted}
+          loading={isLoading}
+          loadingRows={limit}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          selected={selected}
+          onSelectAll={toggleAll}
+          onSelectRow={toggleOne}
+          rowKey={(inv) => inv._id}
+          visibleCols={visibleCols}
+          emptyText="No invoices found"
+          rowAction={(inv) => (
+            <ActionMenu items={[
+              { label: 'View', href: `/admin/invoices/${inv._id}`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg> },
+              { label: 'Edit', href: `/admin/invoices/${inv._id}/edit`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg> },
+              { label: 'Download PDF', href: `/api/invoices/${inv._id}/pdf`, icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> },
+            ]} />
+          )}
+        />
+      </div>
 
       {/* Pagination */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">

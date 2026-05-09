@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 interface Payment {
   _id: string;
@@ -93,13 +94,14 @@ export default function AdminPaymentsPage() {
         danger={confirmModal.action === 'failed'}
       />
 
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="section-title">Payments</h1>
-          <p className="section-subtitle">Review and verify client payment submissions</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Payments"
+        subtitle="Review and verify client payment submissions"
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/admin/dashboard', home: true },
+          { label: 'Payments' },
+        ]}
+      />
 
       {/* Summary */}
       {!isLoading && payments.length > 0 && (

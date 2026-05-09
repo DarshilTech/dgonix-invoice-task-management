@@ -1,6 +1,7 @@
 'use client';
 
 import { useDocumentTitle } from '@/hooks/useDocumentTitle';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 const REPORTS = [
   {
@@ -33,10 +34,14 @@ export default function ReportsPage() {
   useDocumentTitle('Reports');
   return (
     <div className="space-y-6 py-6">
-      <div>
-        <h1 className="section-title">Reports</h1>
-        <p className="section-subtitle">Financial reports and analytics</p>
-      </div>
+      <PageHeader
+        title="Reports"
+        subtitle="Financial reports and analytics"
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/admin/dashboard', home: true },
+          { label: 'Reports' },
+        ]}
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {REPORTS.map((report) => (
