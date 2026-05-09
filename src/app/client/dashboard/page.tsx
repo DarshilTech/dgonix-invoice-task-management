@@ -40,7 +40,7 @@ export default function ClientDashboardPage() {
   const amountDue = invoices
     .filter((inv) => inv.status !== 'paid')
     .reduce((sum, inv) => sum + (inv.balanceAmount || 0), 0);
-  const currency = invoices[0]?.currency || 'USD';
+  const currency = invoices[0]?.currency || 'INV';
   const recent = invoices.slice(0, 5);
 
   return (

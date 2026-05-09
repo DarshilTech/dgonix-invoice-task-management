@@ -24,14 +24,14 @@ function HomeIcon() {
 
 export function PageHeader({ title, subtitle, breadcrumbs, actions }: PageHeaderProps) {
   return (
-    <div className="mb-6 space-y-1.5">
-       {/* Title row */}
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="section-title">{title}</h1>
+    <div className="mb-6 space-y-3">
+      {/* Title row */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="section-title truncate">{title}</h1>
           {subtitle && <p className="mt-0.5 text-sm text-gray-500">{subtitle}</p>}
         </div>
-        {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (

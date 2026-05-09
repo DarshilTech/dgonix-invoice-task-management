@@ -269,24 +269,24 @@ export default function AdminInvoiceDetailPage() {
             <StatusBadge status={invoice.status} />
             {canEdit && (
               <Link href={`/admin/invoices/${invoiceId}/edit`}
-                className="h-9 rounded-md flex items-center border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-                Edit Invoice
+                className="h-9 rounded-md flex items-center border border-gray-200 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                Edit
               </Link>
             )}
             <button onClick={downloadPdf} type="button"
-              className="h-9 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-              Download PDF
+              className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+              <span className="hidden sm:inline">Download </span>PDF
             </button>
             <button onClick={sendEmail} disabled={sendingEmail} type="button"
-              className="h-9 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
-              {sendingEmail ? 'Sending…' : 'Send Email'}
+              className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              {sendingEmail ? 'Sending…' : <><span className="hidden sm:inline">Send </span>Email</>}
             </button>
             <button onClick={() => setShowPaymentForm(true)} type="button"
-              className="h-9 rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 transition-colors">
-              Add Payment
+              className="h-9 rounded-md bg-gray-900 px-3 text-sm font-medium text-white hover:bg-gray-700 transition-colors">
+              + Payment
             </button>
             <button onClick={deleteInvoice} type="button"
-              className="h-9 rounded-md bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 transition-colors">
+              className="h-9 rounded-md bg-red-600 px-3 text-sm font-medium text-white hover:bg-red-700 transition-colors">
               Delete
             </button>
           </div>
@@ -435,13 +435,22 @@ export default function AdminInvoiceDetailPage() {
             <span>Unit Price</span>
             <span className="text-right">Amount</span>
           </div>
-          <div className="divide-y divide-gray-50">
+          <div className="divide-y divide-gray-100">
             {invoice.lineItems.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-1 gap-2 px-5 py-4 md:grid-cols-[2fr_1fr_1fr_1fr] md:items-center">
-                <span className="text-sm text-gray-800">{item.description}</span>
-                <span className="text-sm text-gray-600">{item.quantity}</span>
-                <span className="text-sm text-gray-600">{fmt(item.unitPrice, cur)}</span>
-                <span className="text-right text-sm font-semibold text-gray-800">{fmt(item.quantity * item.unitPrice, cur)}</span>
+              <div key={idx} className="px-5 py-4 md:grid md:grid-cols-[2fr_1fr_1fr_1fr] md:items-center md:gap-3">
+                <p className="text-sm font-medium text-gray-800 mb-2 md:mb-0">{item.description}</p>
+                <div className="flex items-center justify-between md:block">
+                  <span className="text-xs text-gray-400 md:hidden">Qty</span>
+                  <span className="text-sm text-gray-600">{item.quantity}</span>
+                </div>
+                <div className="flex items-center justify-between md:block">
+                  <span className="text-xs text-gray-400 md:hidden">Unit Price</span>
+                  <span className="text-sm text-gray-600">{fmt(item.unitPrice, cur)}</span>
+                </div>
+                <div className="flex items-center justify-between md:block">
+                  <span className="text-xs text-gray-400 md:hidden">Amount</span>
+                  <span className="text-sm font-semibold text-gray-800 md:text-right md:block">{fmt(item.quantity * item.unitPrice, cur)}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -498,17 +507,19 @@ export default function AdminInvoiceDetailPage() {
         ) : (
           <div className="divide-y divide-gray-50">
             {payments.map((payment) => (
-              <div key={payment._id} className="flex items-start justify-between gap-4 px-5 py-4">
-                <div>
-                  <p className="font-semibold text-gray-900">{fmt(payment.amount, cur)}</p>
+              <div key={payment._id} className="flex items-start justify-between gap-3 px-5 py-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold text-gray-900">{fmt(payment.amount, cur)}</p>
+                    <StatusBadge status={payment.status} />
+                  </div>
                   <p className="mt-0.5 text-sm text-gray-500">{payment.paymentMethod} · {new Date(payment.paymentDate).toLocaleDateString()}</p>
-                  {payment.notes && <p className="mt-1 text-sm text-gray-500">{payment.notes}</p>}
+                  {payment.notes && <p className="mt-1 text-sm text-gray-500 break-words">{payment.notes}</p>}
                   <div className="mt-2 flex gap-3 text-xs">
                     <button className="font-medium text-primary-600 hover:underline" onClick={() => editPayment(payment)} type="button">Edit</button>
                     <button className="font-medium text-red-600 hover:underline" onClick={() => deletePayment(payment._id)} type="button">Delete</button>
                   </div>
                 </div>
-                <StatusBadge status={payment.status} />
               </div>
             ))}
           </div>
