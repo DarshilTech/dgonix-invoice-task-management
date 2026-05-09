@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Company, Client } from '@/lib/db/models';
+import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { createInvoiceSchema } from '@/lib/validation/invoice';
 import { generatePaymentReference } from '@/lib/utils/helpers';
@@ -122,7 +122,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Client not found' }, { status: 404 });
     }
 
-    const prefix = company.invoicePrefix || 'INV';
+    const config = await CompanyConfig.findOne({ userId: auth.payload.userId }).lean() as { invoicePrefix?: string } | null;
+    const prefix = config?.invoicePrefix?.trim() || (company as any).invoicePrefix?.trim() || 'INV';
 
     // Derive next sequence from actual invoices — always starts at 1 for new companies
     const lastInvoice = await Invoice.findOne({ tenantId })
