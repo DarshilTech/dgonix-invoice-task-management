@@ -5,6 +5,8 @@ import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
 import { sendEmail } from '@/lib/email/transporter';
 import { generateInvoiceEmailHTML } from '@/lib/email/templates';
+
+export const maxDuration = 60;
 import { formatDate } from '@/lib/utils/helpers';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {

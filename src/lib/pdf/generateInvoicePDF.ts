@@ -238,20 +238,22 @@ export function generateInvoiceHTML(d: InvoicePdfData): string {
 async function generateWithPuppeteer(html: string): Promise<Buffer | null> {
   try {
     let executablePath: string | undefined;
-    let launchArgs: string[] = ['--no-sandbox', '--disable-setuid-sandbox'];
+    let launchArgs: string[] = ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
 
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-      // Local / VPS with Chrome installed
+      // Local / VPS with system Chrome
       executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     } else {
-      // Serverless (Vercel / Lambda) — use bundled Chromium
-      const chromium = await import('@sparticuz/chromium');
-      executablePath = await chromium.default.executablePath();
+      // Serverless (Vercel / Lambda) — download Chromium to /tmp at runtime
+      const chromium = await import('@sparticuz/chromium-min');
+      executablePath = await chromium.default.executablePath(
+        'https://github.com/Sparticuz/chromium/releases/download/v131.0.0/chromium-v131.0.0-pack.tar'
+      );
       launchArgs = [...launchArgs, ...chromium.default.args];
     }
 
     const puppeteer = await import('puppeteer-core');
-    const browser = await puppeteer.launch({
+    const browser = await (puppeteer as any).launch({
       args: launchArgs,
       executablePath,
       headless: true,
@@ -265,7 +267,8 @@ async function generateWithPuppeteer(html: string): Promise<Buffer | null> {
     });
     await browser.close();
     return Buffer.from(pdf);
-  } catch {
+  } catch (err) {
+    console.error('[PDF] Puppeteer failed:', err);
     return null;
   }
 }

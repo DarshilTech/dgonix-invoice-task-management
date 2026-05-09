@@ -4,6 +4,8 @@ import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
 
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const auth = verifyRequestAuth(request);

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { companyName, subdomain, language, currency } = validation.data;
-    const invoicePrefix = currency.slice(0, 3).toUpperCase();
+    const invoicePrefix = "INV";
 
     await connectDB();
 
