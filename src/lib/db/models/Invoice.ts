@@ -18,6 +18,11 @@ export interface IInvoice extends Document {
   paymentReference: string;
   status: 'draft' | 'sent' | 'partially_paid' | 'paid' | 'overdue' | 'cancelled';
   lineItems: LineItem[];
+  discount?: number;
+  discountType?: 'Amount' | 'Percent';
+  discountAmount?: number;
+  partial?: number;
+  poNumber?: string;
   subtotal: number;
   taxRate?: number;
   taxAmount?: number;
@@ -50,13 +55,13 @@ const invoiceSchema = new Schema<IInvoice>(
   {
     tenantId: {
       type: Schema.Types.ObjectId,
-      ref: 'Tenant',
+      ref: 'Company',
       required: true,
       index: true,
     },
     companyId: {
       type: Schema.Types.ObjectId,
-      ref: 'Tenant',
+      ref: 'Company',
       required: true,
       index: true,
     },
@@ -69,8 +74,6 @@ const invoiceSchema = new Schema<IInvoice>(
     invoiceNumber: {
       type: String,
       required: true,
-      unique: true,
-      index: true,
     },
     invoiceDate: {
       type: Date,
@@ -93,6 +96,11 @@ const invoiceSchema = new Schema<IInvoice>(
       index: true,
     },
     lineItems: [lineItemSchema],
+    discount:       { type: Number, default: 0 },
+    discountType:   { type: String, enum: ['Amount', 'Percent'], default: 'Amount' },
+    discountAmount: { type: Number, default: 0 },
+    partial:        { type: Number, default: 0 },
+    poNumber:       String,
     subtotal: {
       type: Number,
       required: true,
@@ -159,6 +167,7 @@ invoiceSchema.pre('validate', function syncTenantAndBalances(next) {
   next();
 });
 
+invoiceSchema.index({ tenantId: 1, invoiceNumber: 1 }, { unique: true });
 invoiceSchema.index({ tenantId: 1, status: 1 });
 invoiceSchema.index({ tenantId: 1, clientId: 1 });
 invoiceSchema.index({ companyId: 1, status: 1 });

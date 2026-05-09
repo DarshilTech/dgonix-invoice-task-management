@@ -2,361 +2,333 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { PageHeader } from '@/components/ui/PageHeader';
+import { RichEditor } from '@/components/ui/RichEditor';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 
-type Company = {
-  _id: string;
-  name: string;
-};
-
-type Client = {
-  _id: string;
-  name: string;
-  email: string;
-};
+type Client  = { _id: string; name: string; email: string };
 
 type LineItem = {
+  service: string;
   description: string;
-  quantity: number;
-  unitPrice: number;
+  rate: number;
+  hours: number;
 };
 
+const emptyLine = (): LineItem => ({ service: '', description: '', rate: 0, hours: 1 });
+
+const NOTE_TABS = ['Public Notes', 'Terms'] as const;
+type NoteTab = typeof NOTE_TABS[number];
+
+const fmt = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+
+function TotalsRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between py-2.5 ${bold ? 'border-t border-gray-200 mt-1' : 'border-t border-gray-100'}`}>
+      <span className={`text-sm ${bold ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>{label}</span>
+      <span className={`text-sm ${bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>{value}</span>
+    </div>
+  );
+}
+
 export default function CreateInvoicePage() {
+  useDocumentTitle('New Invoice');
   const router = useRouter();
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [clients, setClients]       = useState<Client[]>([]);
+  const [isLoading, setIsLoading]   = useState(true);
+  const [isSaving, setIsSaving]     = useState(false);
+  const [error, setError]           = useState('');
+  const [noteTab, setNoteTab]       = useState<NoteTab>('Public Notes');
+
   const [form, setForm] = useState({
-    companyId: '',
-    clientId: '',
-    invoiceDate: new Date().toISOString().split('T')[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    taxRate: 0,
-    notes: '',
-    terms: '',
-    currency: 'USD',
+    companyId:    '',
+    clientId:     '',
+    invoiceDate:  new Date().toISOString().split('T')[0],
+    dueDate:      new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    partial:       '',
+    invoiceNumber: '',
+    poNumber:      '',
+    discount:     '',
+    discountType: 'Amount',
+    taxRate:      0,
+    currency:     'USD',
+    publicNotes:  '',
+    privateNotes: '',
+    terms:        '',
+    footer:       '',
+    customFields: '',
   });
-  const [lineItems, setLineItems] = useState<LineItem[]>([
-    { description: '', quantity: 1, unitPrice: 0 },
-  ]);
+
+  const [lineItems, setLineItems] = useState<LineItem[]>([emptyLine()]);
 
   const totals = useMemo(() => {
-    const subtotal = lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    const net       = lineItems.reduce((s, i) => s + i.rate * i.hours, 0);
+    const discount  = form.discountType === 'Percent'
+      ? net * (Number(form.discount) / 100)
+      : Number(form.discount) || 0;
+    const subtotal  = Math.max(0, net - discount);
     const taxAmount = subtotal * ((form.taxRate || 0) / 100);
-    return {
-      subtotal,
-      taxAmount,
-      total: subtotal + taxAmount,
-    };
-  }, [form.taxRate, lineItems]);
+    const total     = subtotal + taxAmount;
+    return { net, discount, subtotal, taxAmount, total };
+  }, [lineItems, form.discount, form.discountType, form.taxRate]);
 
   useEffect(() => {
-    fetchCompanies();
+    (async () => {
+      const res  = await fetch('/api/companies', { credentials: 'include' });
+      const data = await res.json();
+      if (data.success && data.data?.length) {
+        const companyId = data.data[0]._id as string;
+        setForm((p) => ({ ...p, companyId }));
+        const cr   = await fetch(`/api/clients?limit=200`, { credentials: 'include' });
+        const cd   = await cr.json();
+        if (cd.success) setClients(cd.data || []);
+      }
+      setIsLoading(false);
+    })();
   }, []);
 
-  useEffect(() => {
-    if (form.companyId) {
-      fetchClients(form.companyId);
-    }
-  }, [form.companyId]);
+  const sf = (field: keyof typeof form) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+      setForm((p) => ({ ...p, [field]: e.target.value }));
 
-  const fetchCompanies = async () => {
-    const res = await fetch('/api/companies', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setCompanies(data.data || []);
-      setForm((prev) => ({ ...prev, companyId: data.data?.[0]?._id || '' }));
-    }
-    setIsLoading(false);
+  const setLine = (i: number, patch: Partial<LineItem>) =>
+    setLineItems((prev) => prev.map((item, idx) => (idx === i ? { ...item, ...patch } : item)));
+
+  const addLine    = () => setLineItems((p) => [...p, emptyLine()]);
+  const removeLine = (i: number) => setLineItems((p) => p.filter((_, idx) => idx !== i));
+
+  const noteFieldMap: Record<NoteTab, keyof typeof form> = {
+    'Public Notes':  'publicNotes',
+    'Terms':         'terms',
   };
 
-  const fetchClients = async (companyId: string) => {
-    const res = await fetch(`/api/clients?companyId=${companyId}&limit=100`, {
-      credentials: 'include',
-    });
-    const data = await res.json();
-    if (data.success) {
-      setClients(data.data || []);
-      setForm((prev) => ({ ...prev, clientId: data.data?.[0]?._id || '' }));
-    }
-  };
-
-  const updateLineItem = (index: number, patch: Partial<LineItem>) => {
-    setLineItems((current) =>
-      current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item))
-    );
-  };
-
-  const submitInvoice = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const submitInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsSaving(true);
     setError('');
-
     const res = await fetch('/api/invoices', {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         ...form,
-        tenantId: form.companyId,
-        lineItems,
-        taxRate: Number(form.taxRate) || 0,
+        tenantId:     form.companyId,
+        taxRate:      Number(form.taxRate)  || 0,
+        discount:     Number(form.discount) || 0,
+        partial:      Number(form.partial)  || 0,
+        notes:        form.publicNotes,
+        lineItems: lineItems.map((li) => ({
+          description: li.service || 'Service',
+          quantity:    li.hours,
+          unitPrice:   li.rate,
+        })),
       }),
     });
     const data = await res.json();
     setIsSaving(false);
-
-    if (!res.ok) {
-      setError(data.error || 'Failed to create invoice');
-      return;
-    }
-
+    if (!res.ok) { setError(data.error || 'Failed to create invoice'); return; }
     router.push(`/admin/invoices/${data.data._id}`);
   };
 
   if (isLoading) {
-    return <div className="text-center text-gray-500">Loading invoice form...</div>;
+    return (
+      <div className="py-6 animate-pulse space-y-4">
+        <div className="h-8 w-48 rounded bg-gray-100" />
+        <div className="h-40 rounded-xl bg-gray-100" />
+      </div>
+    );
   }
 
   return (
-    <div>
-      <div className="mb-8">
-        <h1 className="section-title">Create Invoice</h1>
-        <p className="section-subtitle">Add line items and let the service calculate totals</p>
+    <form onSubmit={submitInvoice} className="py-6 space-y-4">
+
+      {/* Page header */}
+      <PageHeader
+        title="New Invoice"
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/admin/dashboard', home: true },
+          { label: 'Invoices', href: '/admin/invoices' },
+          { label: 'New Invoice' },
+        ]}
+        actions={
+          <>
+            <button type="button" onClick={() => router.back()}
+              className="h-9 rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button type="submit" disabled={isSaving}
+              className="h-9 rounded-md bg-gray-900 px-5 text-sm font-medium text-white hover:bg-gray-700 transition-colors disabled:opacity-60">
+              {isSaving ? 'Saving…' : 'Save'}
+            </button>
+          </>
+        }
+      />
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+
+      {/* ── Row 1: Client | Dates | Invoice Details ── */}
+      <div className="grid gap-4 lg:grid-cols-3">
+
+        {/* Client */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Client</p>
+          <div>
+            <label className="mb-1 block text-xs text-gray-500">Client</label>
+            <select name="clientId" className="input" value={form.clientId} onChange={sf('clientId')} required>
+              <option value="">— Select client —</option>
+              {clients.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Dates */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Dates</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="w-32 shrink-0 text-sm text-gray-600">Invoice Date</label>
+              <input name="invoiceDate" className="input flex-1" type="date" value={form.invoiceDate} onChange={sf('invoiceDate')} required />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-32 shrink-0 text-sm text-gray-600">Due Date</label>
+              <input name="dueDate" className="input flex-1" type="date" value={form.dueDate} onChange={sf('dueDate')} required />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-32 shrink-0 text-sm text-gray-600">Partial / Deposit</label>
+              <input name="partial" className="input flex-1" type="number" min="0" step="0.01" placeholder="0.00"
+                value={form.partial} onChange={sf('partial')} />
+            </div>
+          </div>
+        </div>
+
+        {/* Invoice Details */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-400">Invoice Details</p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-sm text-gray-600">Invoice #</label>
+              <input name="invoiceNumber" className="input flex-1" placeholder="Auto Generate" value={form.invoiceNumber} onChange={sf('invoiceNumber')} />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-sm text-gray-600">PO #</label>
+              <input name="poNumber" className="input flex-1" placeholder="Purchase order number" value={form.poNumber} onChange={sf('poNumber')} />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-sm text-gray-600">Discount</label>
+              <select className="input w-24 shrink-0" value={form.discountType} onChange={sf('discountType')}>
+                <option>Amount</option>
+                <option>Percent</option>
+              </select>
+              <input name="discount" className="input flex-1" type="number" min="0" step="0.01" placeholder="0"
+                value={form.discount} onChange={sf('discount')} />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-24 shrink-0 text-sm text-gray-600">Tax Rate %</label>
+              <input name="taxRate" className="input flex-1" type="number" min="0" step="0.01" placeholder="0"
+                value={form.taxRate} onChange={(e) => setForm((p) => ({ ...p, taxRate: Number(e.target.value) }))} />
+            </div>
+          </div>
+        </div>
       </div>
 
-      {error ? (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
-        </div>
-      ) : null}
-
-      <form onSubmit={submitInvoice} className="space-y-6">
-        <div className="card">
-          <div className="card-header">
-            <h2 className="font-semibold">Company and Client</h2>
-          </div>
-          <div className="card-body grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="label">Company</label>
-              <select
-                className="input"
-                value={form.companyId}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, companyId: event.target.value }))
-                }
-                required
-              >
-                {companies.map((company) => (
-                  <option key={company._id} value={company._id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Client</label>
-              <select
-                className="input"
-                value={form.clientId}
-                onChange={(event) => setForm((prev) => ({ ...prev, clientId: event.target.value }))}
-                required
-              >
-                {clients.map((client) => (
-                  <option key={client._id} value={client._id}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+      {/* ── Line items ── */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {/* Header */}
+        <div className="hidden grid-cols-[2fr_2fr_1fr_1fr_1fr_40px] gap-3 border-b border-gray-100 bg-gray-50/70 px-5 py-3 text-xs font-semibold uppercase tracking-wide text-gray-400 md:grid">
+          <span>Service</span>
+          <span>Description</span>
+          <span>Rate</span>
+          <span>Hours</span>
+          <span className="text-right">Line Total</span>
+          <span />
         </div>
 
-        <div className="card">
-          <div className="card-header">
-            <h2 className="font-semibold">Dates</h2>
-          </div>
-          <div className="card-body grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="label">Invoice Date</label>
-              <input
-                className="input"
-                type="date"
-                value={form.invoiceDate}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, invoiceDate: event.target.value }))
-                }
-                required
-              />
-            </div>
-            <div>
-              <label className="label">Due Date</label>
-              <input
-                className="input"
-                type="date"
-                value={form.dueDate}
-                onChange={(event) => setForm((prev) => ({ ...prev, dueDate: event.target.value }))}
-                required
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-header flex items-center justify-between">
-            <h2 className="font-semibold">Line Items</h2>
-            <button
-              className="btn btn-secondary btn-small"
-              onClick={() =>
-                setLineItems((current) => [
-                  ...current,
-                  { description: '', quantity: 1, unitPrice: 0 },
-                ])
-              }
-              type="button"
-            >
-              Add Item
-            </button>
-          </div>
-          <div className="card-body space-y-4">
-            {lineItems.map((item, index) => (
-              <div className="rounded-lg border border-gray-200 p-4" key={index}>
-                <div className="grid gap-3 md:grid-cols-5">
-                  <div className="md:col-span-2">
-                    <label className="label">Description</label>
-                    <input
-                      className="input"
-                      value={item.description}
-                      onChange={(event) =>
-                        updateLineItem(index, { description: event.target.value })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Quantity</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={item.quantity}
-                      onChange={(event) =>
-                        updateLineItem(index, { quantity: Number(event.target.value) })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Unit Price</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.unitPrice}
-                      onChange={(event) =>
-                        updateLineItem(index, { unitPrice: Number(event.target.value) })
-                      }
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Amount</label>
-                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 font-semibold">
-                      {form.currency} {(item.quantity * item.unitPrice).toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-                {lineItems.length > 1 ? (
-                  <button
-                    className="mt-3 text-sm font-medium text-red-700 hover:underline"
-                    onClick={() =>
-                      setLineItems((current) =>
-                        current.filter((_, itemIndex) => itemIndex !== index)
-                      )
-                    }
-                    type="button"
-                  >
-                    Remove item
-                  </button>
-                ) : null}
+        <div className="divide-y divide-gray-50">
+          {lineItems.map((item, idx) => (
+            <div key={idx} className="grid grid-cols-1 gap-3 px-5 py-4 md:grid-cols-[2fr_2fr_1fr_1fr_1fr_40px] md:items-center">
+              <input name={`items[${idx}].service`} className="input" placeholder="Service / Product"
+                value={item.service} onChange={(e) => setLine(idx, { service: e.target.value })} />
+              <input name={`items[${idx}].description`} className="input" placeholder="Description (optional)"
+                value={item.description} onChange={(e) => setLine(idx, { description: e.target.value })} />
+              <input name={`items[${idx}].unitPrice`} className="input" type="number" min="0" step="0.01" placeholder="0.00"
+                value={item.rate || ''} onChange={(e) => setLine(idx, { rate: Number(e.target.value) })} />
+              <input name={`items[${idx}].quantity`} className="input" type="number" min="0" step="0.01" placeholder="1"
+                value={item.hours || ''} onChange={(e) => setLine(idx, { hours: Number(e.target.value) })} />
+              <div className="flex items-center justify-end text-sm font-semibold text-gray-800">
+                {fmt(item.rate * item.hours)}
               </div>
+              <div className="flex justify-end">
+                {lineItems.length > 1 && (
+                  <button type="button" onClick={() => removeLine(idx)}
+                    className="flex h-7 w-7 items-center justify-center rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors">
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-gray-100 px-5 py-3">
+          <button type="button" onClick={addLine}
+            className="flex items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors">
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
+            Add Line
+          </button>
+        </div>
+      </div>
+
+      {/* ── Notes + Totals ── */}
+      <div className="grid gap-4 lg:grid-cols-[1fr_480px]">
+
+        {/* Tabbed rich text notes */}
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="flex  border-b border-gray-200">
+            {NOTE_TABS.map((tab) => (
+              <button key={tab} type="button" onClick={() => setNoteTab(tab)}
+                className={`shrink-0 px-4 py-2.5 text-sm font-medium transition-colors border-b-2 -mb-px ${
+                  noteTab === tab
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}>
+                {tab}
+              </button>
             ))}
           </div>
+
+          {/* One editor per tab — mount all, show active */}
+          {NOTE_TABS.map((tab) => (
+            <div key={tab} className={noteTab === tab ? 'block' : 'hidden'}>
+              <RichEditor
+                value={form[noteFieldMap[tab]] as string}
+                onChange={(html) => setForm((p) => ({ ...p, [noteFieldMap[tab]]: html }))}
+                placeholder={`Enter ${tab.toLowerCase()}…`}
+              />
+            </div>
+          ))}
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div className="card">
-            <div className="card-header">
-              <h2 className="font-semibold">Notes and Terms</h2>
-            </div>
-            <div className="card-body space-y-4">
-              <div>
-                <label className="label">Tax Rate</label>
-                <input
-                  className="input"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.taxRate}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, taxRate: Number(event.target.value) }))
-                  }
-                />
-              </div>
-              <div>
-                <label className="label">Notes</label>
-                <textarea
-                  className="input"
-                  value={form.notes}
-                  onChange={(event) => setForm((prev) => ({ ...prev, notes: event.target.value }))}
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="label">Terms</label>
-                <textarea
-                  className="input"
-                  value={form.terms}
-                  onChange={(event) => setForm((prev) => ({ ...prev, terms: event.target.value }))}
-                  rows={2}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="card h-fit">
-            <div className="card-header">
-              <h2 className="font-semibold">Totals</h2>
-            </div>
-            <div className="card-body space-y-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Subtotal</span>
-                <span className="font-semibold">{form.currency} {totals.subtotal.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Tax</span>
-                <span className="font-semibold">{form.currency} {totals.taxAmount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between border-t border-gray-200 pt-3 text-lg font-bold">
-                <span>Total</span>
-                <span>{form.currency} {totals.total.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
+        {/* Totals */}
+        <div className="rounded-xl border border-gray-200 bg-white p-5 h-fit">
+          <TotalsRow label="Net"      value={fmt(totals.net)} />
+          {totals.discount > 0 && (
+            <TotalsRow
+              label={`Discount${form.discountType === 'Percent' ? ` (${form.discount}%)` : ''}`}
+              value={`− ${fmt(totals.discount)}`}
+            />
+          )}
+          <TotalsRow label="Subtotal" value={fmt(totals.subtotal)} />
+          {form.taxRate > 0 && (
+            <TotalsRow label={`Tax (${form.taxRate}%)`} value={fmt(totals.taxAmount)} />
+          )}
+          <TotalsRow label="Total"        value={fmt(totals.total)} bold />
+          <TotalsRow label="Paid to Date" value={fmt(0)} />
+          <TotalsRow label="Balance"      value={fmt(totals.total)} />
         </div>
-
-        <div className="flex gap-3">
-          <button className="btn btn-primary" disabled={isSaving} type="submit">
-            {isSaving ? 'Creating...' : 'Create Invoice'}
-          </button>
-          <button className="btn btn-secondary" onClick={() => router.back()} type="button">
-            Cancel
-          </button>
-        </div>
-      </form>
-    </div>
+      </div>
+    </form>
   );
 }

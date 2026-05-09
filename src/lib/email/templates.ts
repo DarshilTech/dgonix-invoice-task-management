@@ -164,6 +164,35 @@ export function generatePasswordResetEmailHTML(data: {
   );
 }
 
+// ── Email verification ────────────────────────────────────────────────────────
+export function generateVerificationEmailHTML(data: {
+  verifyLink: string;
+  appName?: string;
+}): string {
+  const app = data.appName || 'Invoxa';
+  const body = `
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="display:inline-block;width:64px;height:64px;background:#111;border-radius:50%;line-height:64px;text-align:center;font-size:28px;color:#fff;font-weight:800">I</div>
+    </div>
+    <h1 style="text-align:center;font-size:24px;letter-spacing:.02em">Account Confirmation</h1>
+    <p style="text-align:center;margin-top:12px">Please access the link below to confirm your account.</p>
+
+    <div style="text-align:center;margin:28px 0">
+      <a href="${data.verifyLink}" target="_blank" style="display:inline-block;background:#22c55e;color:#fff !important;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:6px">Confirm your email.</a>
+    </div>
+
+    <p style="text-align:center;font-size:13px;color:#888">Thank you for choosing ${app}</p>
+    <p style="font-size:11.5px;color:#aaa;text-align:center;margin-top:12px">If the button above doesn't work, paste this link into your browser:<br/>
+    <span style="color:#555;word-break:break-all">${data.verifyLink}</span></p>
+  `;
+
+  return shell(
+    '#22c55e',
+    body,
+    `&copy; ${new Date().getFullYear()} ${app} &bull; You received this because you created an account.`
+  );
+}
+
 // ── Client OTP ────────────────────────────────────────────────────────────────
 export function generateClientOTPEmailHTML(data: {
   otp: string;

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import mongoose from 'mongoose';
 import connectDB from '@/lib/db/connect';
-import { Invoice, Client } from '@/lib/db/models';
+import { Invoice, Client, Company } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
-import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -32,57 +31,75 @@ export async function GET(request: NextRequest) {
 
   await connectDB();
 
-  const tenantIds = getAccessibleTenantIds(auth.payload);
+  const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id').lean();
   const months = getLast6Months();
+
   const empty = {
-    summary: { totalInvoices: 0, paidInvoices: 0, openInvoices: 0, overdueInvoices: 0, totalClients: 0, totalRevenue: 0 },
+    summary: {
+      totalInvoices: 0, paidInvoices: 0, openInvoices: 0, overdueInvoices: 0,
+      totalClients: 0, totalRevenue: 0, totalInvoiced: 0, totalOutstanding: 0,
+    },
     monthlyRevenue: months.map(m => ({ month: m.label, revenue: 0, invoices: 0 })),
-    monthlyClients: months.map(m => ({ month: m.label, clients: 0 })),
     statusBreakdown: [],
     recentInvoices: [],
   };
 
-  if (tenantIds.length === 0) {
+  if (ownedCompanies.length === 0) {
     return NextResponse.json({ success: true, data: empty });
   }
 
-  const tenantObjectIds = tenantIds
-    .filter(id => mongoose.Types.ObjectId.isValid(id))
-    .map(id => new mongoose.Types.ObjectId(id));
-
+  const tenantObjectIds = ownedCompanies.map((c) => c._id as mongoose.Types.ObjectId);
   const sixMonthsAgo = new Date(months[0].year, months[0].month - 1, 1);
 
   const [
-    revenueAgg, statusAgg, clientAgg,
-    totalInvoices, paidCount, openCount, overdueCount, totalClients, revenueSum, recentInvoices,
+    revenueAgg,
+    statusAgg,
+    clientAgg,
+    totalInvoices,
+    paidCount,
+    openCount,
+    overdueCount,
+    totalClients,
+    financialAgg,
+    recentInvoices,
   ] = await Promise.all([
+    // Monthly paid revenue for chart
     Invoice.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds }, status: 'paid', invoiceDate: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$invoiceDate' }, month: { $month: '$invoiceDate' } }, revenue: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
       { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
+    // Status breakdown
     Invoice.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds } } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]),
+    // Monthly clients for spark (unused in UI but keep for future)
     Client.aggregate([
       { $match: { tenantId: { $in: tenantObjectIds }, createdAt: { $gte: sixMonthsAgo } } },
       { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, count: { $sum: 1 } } },
-      { $sort: { '_id.year': 1, '_id.month': 1 } },
     ]),
-    Invoice.countDocuments({ tenantId: { $in: tenantIds } }),
-    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: 'paid' }),
-    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: { $in: ['sent', 'partially_paid'] } }),
-    Invoice.countDocuments({ tenantId: { $in: tenantIds }, status: 'overdue' }),
-    Client.countDocuments({ tenantId: { $in: tenantIds } }),
+    Invoice.countDocuments({ tenantId: { $in: tenantObjectIds } }),
+    Invoice.countDocuments({ tenantId: { $in: tenantObjectIds }, status: 'paid' }),
+    Invoice.countDocuments({ tenantId: { $in: tenantObjectIds }, status: { $in: ['sent', 'partially_paid'] } }),
+    Invoice.countDocuments({ tenantId: { $in: tenantObjectIds }, status: 'overdue' }),
+    Client.countDocuments({ tenantId: { $in: tenantObjectIds } }),
+    // Financial totals: total invoiced, total paid, total outstanding
     Invoice.aggregate([
-      { $match: { tenantId: { $in: tenantObjectIds }, status: 'paid' } },
-      { $group: { _id: null, total: { $sum: '$paidAmount' } } },
+      { $match: { tenantId: { $in: tenantObjectIds } } },
+      {
+        $group: {
+          _id: null,
+          totalInvoiced:    { $sum: '$totalAmount' },
+          totalPaid:        { $sum: '$paidAmount' },
+          totalOutstanding: { $sum: '$balanceAmount' },
+        },
+      },
     ]),
-    Invoice.find({ tenantId: { $in: tenantIds } })
+    Invoice.find({ tenantId: { $in: tenantObjectIds } })
       .populate('clientId', 'name')
       .sort({ createdAt: -1 })
-      .limit(6)
+      .limit(10)
       .lean(),
   ]);
 
@@ -91,39 +108,37 @@ export async function GET(request: NextRequest) {
     return { month: m.label, revenue: found?.revenue ?? 0, invoices: found?.count ?? 0 };
   });
 
-  const monthlyClients = months.map(m => {
-    const found = clientAgg.find(c => c._id.year === m.year && c._id.month === m.month);
-    return { month: m.label, clients: found?.count ?? 0 };
-  });
-
   const statusMap: Record<string, number> = {};
   statusAgg.forEach(s => { statusMap[s._id] = s.count; });
   const statusBreakdown = Object.entries(statusMap)
     .filter(([, v]) => v > 0)
     .map(([name, value]) => ({ name, label: name.replace('_', ' '), value, color: PIE_COLORS[name] ?? '#94a3b8' }));
 
+  const fin = financialAgg[0] ?? { totalInvoiced: 0, totalPaid: 0, totalOutstanding: 0 };
+
   return NextResponse.json({
     success: true,
     data: {
       summary: {
         totalInvoices,
-        paidInvoices: paidCount,
-        openInvoices: openCount,
-        overdueInvoices: overdueCount,
+        paidInvoices:     paidCount,
+        openInvoices:     openCount,
+        overdueInvoices:  overdueCount,
         totalClients,
-        totalRevenue: revenueSum[0]?.total ?? 0,
+        totalRevenue:     fin.totalPaid,
+        totalInvoiced:    fin.totalInvoiced,
+        totalOutstanding: fin.totalOutstanding,
       },
       monthlyRevenue,
-      monthlyClients,
       statusBreakdown,
       recentInvoices: recentInvoices.map((inv: any) => ({
-        _id: inv._id,
+        _id:           inv._id,
         invoiceNumber: inv.invoiceNumber,
-        clientName: (inv.clientId as any)?.name ?? 'Unknown',
-        total: inv.totalAmount ?? inv.total,
-        balance: inv.balanceAmount ?? 0,
-        status: inv.status,
-        dueDate: inv.dueDate,
+        clientName:    (inv.clientId as any)?.name ?? 'Unknown',
+        total:         inv.totalAmount ?? inv.total ?? 0,
+        balance:       inv.balanceAmount ?? 0,
+        status:        inv.status,
+        dueDate:       inv.dueDate,
       })),
     },
   });

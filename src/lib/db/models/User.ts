@@ -11,6 +11,8 @@ export interface IUser extends Document {
   clientId?: mongoose.Types.ObjectId;
   companyId?: mongoose.Types.ObjectId;
   emailVerified: boolean;
+  emailVerificationToken?: string;
+  emailVerificationExpiry?: Date;
   isActive: boolean;
   resetPasswordToken?: string;
   resetPasswordExpiry?: Date;
@@ -39,11 +41,11 @@ const userSchema = new Schema<IUser>(
     },
     firstName: {
       type: String,
-      required: true,
+      default: '',
     },
     lastName: {
       type: String,
-      required: true,
+      default: '',
     },
     role: {
       type: String,
@@ -68,6 +70,8 @@ const userSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    emailVerificationToken: String,
+    emailVerificationExpiry: Date,
     isActive: {
       type: Boolean,
       default: true,
@@ -81,7 +85,6 @@ const userSchema = new Schema<IUser>(
   }
 );
 
-// Indexes for queries
 userSchema.pre('validate', function syncTenantId(next) {
   if (!this.tenantId) {
     const fallbackTenantId =

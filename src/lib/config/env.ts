@@ -4,7 +4,7 @@ const serverEnvSchema = z.object({
   MONGODB_URI: z.string().min(1, 'MONGODB_URI is required'),
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   REFRESH_TOKEN_SECRET: z.string().min(32, 'REFRESH_TOKEN_SECRET must be at least 32 characters'),
-  JWT_EXPIRY: z.string().default('15m'),
+  JWT_EXPIRY: z.string().default('6h'),
   REFRESH_TOKEN_EXPIRY: z.string().default('7d'),
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
   SMTP_HOST: z.string().optional(),
@@ -12,6 +12,12 @@ const serverEnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().email().optional(),
+  SMTP_NAME: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_BUCKET_NAME: z.string().optional(),
+  R2_PUBLIC_URL: z.string().optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 });
 

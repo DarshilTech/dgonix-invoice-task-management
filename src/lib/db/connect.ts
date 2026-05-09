@@ -22,9 +22,16 @@ async function connectDB() {
 
     cached.mongoose.promise = mongoose
       .connect(MONGODB_URI, opts)
-      .then((mongoose) => {
+      .then(async (m) => {
         console.log('✅ MongoDB connected');
-        return mongoose;
+        // Drop stale indexes that conflict with the current schema
+        try {
+          await m.connection.db?.collection('companyconfigs').dropIndex('tenantId_1');
+          console.log('🧹 Dropped stale companyconfigs.tenantId_1 index');
+        } catch {
+          // Index doesn't exist — nothing to do
+        }
+        return m;
       })
       .catch((err) => {
         console.error('❌ MongoDB connection failed:', err);

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import connectDB from '@/lib/db/connect';
 import { User } from '@/lib/db/models';
 import { hashPassword } from '@/lib/auth/password';
 import { signToken, signRefreshToken, type JWTPayload } from '@/lib/auth/jwt';
 import { signupSchema } from '@/lib/validation/auth';
+import { sendEmail } from '@/lib/email/transporter';
+import { generateVerificationEmailHTML } from '@/lib/email/templates';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,14 +35,19 @@ export async function POST(request: NextRequest) {
 
     const passwordHash = await hashPassword(password);
 
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationExpiry = new Date(Date.now() + 48 * 60 * 60 * 1000);
+
     const user = await User.create({
       email: email.toLowerCase(),
       passwordHash,
-      firstName,
-      lastName,
+      firstName: firstName || '',
+      lastName: lastName || '',
       role: 'admin',
       companyIds: [],
       emailVerified: false,
+      emailVerificationToken,
+      emailVerificationExpiry,
     });
 
     const tokenPayload: JWTPayload = {
@@ -51,6 +59,15 @@ export async function POST(request: NextRequest) {
 
     const token = signToken(tokenPayload);
     const refreshToken = signRefreshToken(tokenPayload);
+
+    // Send verification email (non-blocking — don't fail signup if email fails)
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const verifyLink = `${appUrl}/verify-email?token=${emailVerificationToken}`;
+    sendEmail({
+      to: user.email,
+      subject: 'Account Confirmation – Invoxa',
+      html: generateVerificationEmailHTML({ verifyLink, appName: 'Invoxa' }),
+    }).catch((err) => console.error('Verification email failed:', err));
 
     const response = NextResponse.json(
       {

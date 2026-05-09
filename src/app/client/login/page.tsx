@@ -129,12 +129,14 @@ export default function ClientLoginPage() {
                   <label className="label">Email Address</label>
                   <input
                     type="email"
+                    name="email"
                     className="input"
                     placeholder="you@yourcompany.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     autoFocus
+                    autoComplete="email"
                   />
                 </div>
                 <button type="submit" className="btn btn-primary w-full" disabled={isLoading}>
@@ -164,6 +166,7 @@ export default function ClientLoginPage() {
                       key={i}
                       ref={(el) => { otpRefs.current[i] = el; }}
                       type="text"
+                      name={`otp[${i}]`}
                       inputMode="numeric"
                       maxLength={1}
                       value={digit}

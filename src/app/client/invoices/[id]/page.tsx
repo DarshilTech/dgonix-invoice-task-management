@@ -77,7 +77,7 @@ export default function ClientInvoiceDetailPage() {
   }
 
   return (
-    <div>
+    <div className="py-6">
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-3">
@@ -179,6 +179,7 @@ export default function ClientInvoiceDetailPage() {
                 <div>
                   <label className="label">Proof URL</label>
                   <input
+                    name="proofUrl"
                     className="input"
                     value={proofUrl}
                     onChange={(event) => setProofUrl(event.target.value)}

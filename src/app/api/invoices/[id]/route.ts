@@ -1,26 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Invoice } from '@/lib/db/models';
+import { Invoice, Company } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { updateInvoiceSchema } from '@/lib/validation/invoice';
 import { calculateInvoiceTotals, refreshInvoicePaymentState } from '@/services/invoiceService';
-import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
-function buildInvoiceAccessQuery(
+async function getOwnedCompanyIds(userId: string) {
+  const companies = await Company.find({ ownerId: userId }).select('_id');
+  return companies.map((c) => c._id);
+}
+
+async function findInvoiceForUser(
   id: string,
-  payload: NonNullable<ReturnType<typeof verifyRequestAuth>['payload']>,
-  tenantIds: string[]
+  payload: NonNullable<ReturnType<typeof verifyRequestAuth>['payload']>
 ) {
-  const query: Record<string, any> = { _id: id };
-
   if (payload.role === 'admin') {
-    query.tenantId = { $in: tenantIds };
-  } else {
-    query.tenantId = tenantIds[0];
-    query.clientId = payload.clientId;
+    const companyIds = await getOwnedCompanyIds(payload.userId);
+    return Invoice.findOne({ _id: id, tenantId: { $in: companyIds } });
   }
-
-  return query;
+  return Invoice.findOne({ _id: id, tenantId: payload.tenantId, clientId: payload.clientId });
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
@@ -33,26 +31,15 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     await connectDB();
 
-    const tenantIds = getAccessibleTenantIds(auth.payload);
-    if (tenantIds.length === 0) {
-      return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
-    }
-
-    const invoice = await Invoice.findOne(buildInvoiceAccessQuery(params.id, auth.payload, tenantIds))
-      .populate('clientId')
-      .populate('companyId');
-
+    const invoice = await findInvoiceForUser(params.id, auth.payload);
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
     }
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: invoice,
-      },
-      { status: 200 }
-    );
+    await invoice.populate('clientId');
+    await invoice.populate('companyId');
+
+    return NextResponse.json({ success: true, data: invoice }, { status: 200 });
   } catch (error) {
     console.error('Get invoice error:', error);
     return NextResponse.json({ success: false, error: 'Failed to fetch invoice' }, { status: 500 });
@@ -69,8 +56,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     await connectDB();
 
-    const tenantIdsPut = getAccessibleTenantIds(auth.payload);
-    const invoice = await Invoice.findOne(buildInvoiceAccessQuery(params.id, auth.payload, tenantIdsPut));
+    const invoice = await findInvoiceForUser(params.id, auth.payload);
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
@@ -94,28 +80,32 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const data = validation.data;
 
-    if (data.lineItems) {
-      const totals = calculateInvoiceTotals(data.lineItems, data.taxRate ?? invoice.taxRate ?? 0);
-      invoice.lineItems = totals.lineItems;
-      invoice.subtotal = totals.subtotal;
-      invoice.taxAmount = totals.taxAmount;
-      invoice.total = totals.total;
-      invoice.totalAmount = totals.totalAmount;
-      invoice.balanceAmount = Math.max(0, totals.totalAmount - invoice.paidAmount);
+    const effectiveDiscount     = data.discount     ?? invoice.discount     ?? 0;
+    const effectiveDiscountType = data.discountType ?? invoice.discountType ?? 'Amount';
+    const effectiveTaxRate      = data.taxRate      ?? invoice.taxRate      ?? 0;
+
+    if (data.lineItems || data.discount !== undefined || data.discountType !== undefined || data.taxRate !== undefined) {
+      const items  = data.lineItems ?? invoice.lineItems;
+      const totals = calculateInvoiceTotals(items, effectiveTaxRate, effectiveDiscount, effectiveDiscountType as 'Amount' | 'Percent');
+      invoice.lineItems      = totals.lineItems;
+      invoice.discountAmount = totals.discountAmount;
+      invoice.subtotal       = totals.subtotal;
+      invoice.taxAmount      = totals.taxAmount;
+      invoice.total          = totals.total;
+      invoice.totalAmount    = totals.totalAmount;
+      invoice.balanceAmount  = Math.max(0, totals.totalAmount - invoice.paidAmount);
     }
 
-    if (data.dueDate) {
-      invoice.dueDate = new Date(data.dueDate);
-    }
-
-    if (data.invoiceDate) {
-      invoice.invoiceDate = new Date(data.invoiceDate);
-    }
-
-    if (data.taxRate !== undefined) invoice.taxRate = data.taxRate;
-    if (data.notes !== undefined) invoice.notes = data.notes;
-    if (data.terms !== undefined) invoice.terms = data.terms;
-    if (data.status) invoice.status = data.status;
+    if (data.invoiceDate)          invoice.invoiceDate  = new Date(data.invoiceDate);
+    if (data.dueDate)              invoice.dueDate      = new Date(data.dueDate);
+    if (data.taxRate !== undefined)      invoice.taxRate      = data.taxRate;
+    if (data.discount !== undefined)     invoice.discount     = data.discount;
+    if (data.discountType !== undefined) invoice.discountType = data.discountType;
+    if (data.partial !== undefined)      invoice.partial      = data.partial;
+    if (data.poNumber !== undefined)     invoice.poNumber     = data.poNumber;
+    if (data.notes !== undefined)        invoice.notes        = data.notes;
+    if (data.terms !== undefined)        invoice.terms        = data.terms;
+    if (data.status)                     invoice.status       = data.status;
 
     await invoice.save();
     await refreshInvoicePaymentState(invoice._id, invoice.tenantId);
@@ -146,8 +136,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
     await connectDB();
 
-    const tenantIdsDel = getAccessibleTenantIds(auth.payload);
-    const invoice = await Invoice.findOne(buildInvoiceAccessQuery(params.id, auth.payload, tenantIdsDel));
+    const invoice = await findInvoiceForUser(params.id, auth.payload);
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });

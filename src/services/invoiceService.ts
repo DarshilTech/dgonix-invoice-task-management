@@ -12,32 +12,41 @@ export function roundMoney(amount: number) {
   return Math.round((Number(amount) + Number.EPSILON) * 100) / 100;
 }
 
-export function calculateInvoiceTotals(lineItems: LineItemInput[], taxRate = 0) {
-  let subtotal = 0;
-  let taxAmount = 0;
+export function calculateInvoiceTotals(
+  lineItems: LineItemInput[],
+  taxRate = 0,
+  discount = 0,
+  discountType: 'Amount' | 'Percent' = 'Amount'
+) {
+  const net = lineItems.reduce(
+    (sum, item) => roundMoney(sum + roundMoney(item.quantity * item.unitPrice)),
+    0
+  );
 
-  const processedLineItems: LineItem[] = lineItems.map((item) => {
-    const itemSubtotal = roundMoney(item.quantity * item.unitPrice);
-    const itemTax = roundMoney(item.tax ?? itemSubtotal * (taxRate / 100));
-    subtotal = roundMoney(subtotal + itemSubtotal);
-    taxAmount = roundMoney(taxAmount + itemTax);
+  const discountAmount =
+    discountType === 'Percent'
+      ? roundMoney(net * (discount / 100))
+      : roundMoney(Math.min(discount, net));
 
-    return {
-      description: item.description,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice,
-      tax: itemTax,
-      total: roundMoney(itemSubtotal + itemTax),
-    };
-  });
-
+  const subtotal   = roundMoney(Math.max(0, net - discountAmount));
+  const taxAmount  = roundMoney(subtotal * (taxRate / 100));
   const totalAmount = roundMoney(subtotal + taxAmount);
+
+  const processedLineItems: LineItem[] = lineItems.map((item) => ({
+    description: item.description,
+    quantity:    item.quantity,
+    unitPrice:   item.unitPrice,
+    tax:         0,
+    total:       roundMoney(item.quantity * item.unitPrice),
+  }));
 
   return {
     lineItems: processedLineItems,
+    net,
+    discountAmount,
     subtotal,
     taxAmount,
-    total: totalAmount,
+    total:        totalAmount,
     totalAmount,
     balanceAmount: totalAmount,
   };

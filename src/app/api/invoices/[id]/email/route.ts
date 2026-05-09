@@ -6,7 +6,6 @@ import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
 import { sendEmail } from '@/lib/email/transporter';
 import { generateInvoiceEmailHTML } from '@/lib/email/templates';
 import { formatDate } from '@/lib/utils/helpers';
-import { getAccessibleTenantIds } from '@/services/tenantAccess';
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -18,9 +17,10 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     await connectDB();
 
+    const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
     const invoice = await Invoice.findOne({
       _id: params.id,
-      tenantId: { $in: getAccessibleTenantIds(auth.payload) },
+      tenantId: { $in: ownedCompanies.map((c) => c._id) },
     });
 
     if (!invoice) {
@@ -64,16 +64,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         zip: config?.zip || company.zip,
         country: config?.country || company.country,
         logo: config?.logo || company.logo,
-        wiseTransferRef: config?.wiseTransferRef || company.wiseTransferRef,
+        wiseTransferRef: config?.wiseTransferRef,
       },
       client: {
         name: client.name,
         email: client.email,
-        address: client.address,
-        city: client.city,
-        state: client.state,
-        zip: client.zip,
-        country: client.country,
+        address: client.billingStreet,
+        city: client.billingCity,
+        state: client.billingState,
+        zip: client.billingPostalCode,
+        country: client.billingCountry,
       },
       lineItems: invoice.lineItems,
       subtotal: invoice.subtotal,

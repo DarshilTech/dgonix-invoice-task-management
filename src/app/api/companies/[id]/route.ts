@@ -3,7 +3,6 @@ import connectDB from '@/lib/db/connect';
 import { Company } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { updateCompanySchema } from '@/lib/validation/company';
-import { requireTenantAccess } from '@/services/tenantAccess';
 
 export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -12,7 +11,6 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    requireTenantAccess(auth.payload, params.id);
     await connectDB();
 
     const body = await request.json();
@@ -24,10 +22,11 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       );
     }
 
-    const company = await Company.findByIdAndUpdate(params.id, validation.data, {
-      new: true,
-      runValidators: true,
-    });
+    const company = await Company.findOneAndUpdate(
+      { _id: params.id, ownerId: auth.payload.userId },
+      validation.data,
+      { new: true, runValidators: true }
+    );
 
     if (!company) {
       return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
@@ -36,11 +35,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ success: true, data: company }, { status: 200 });
   } catch (error) {
     console.error('Update company error:', error);
-    const status = error instanceof Error && error.message === 'Forbidden' ? 403 : 500;
-    return NextResponse.json(
-      { success: false, error: status === 403 ? 'Forbidden' : 'Failed to update company' },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update company' }, { status: 500 });
   }
 }
 
@@ -51,13 +46,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
 
-    requireTenantAccess(auth.payload, params.id);
     await connectDB();
 
-    const company = await Company.findByIdAndUpdate(
-      params.id,
+    const company = await Company.findOneAndUpdate(
+      { _id: params.id, ownerId: auth.payload.userId },
       { isActive: false },
-      { new: true, runValidators: true }
+      { new: true }
     );
 
     if (!company) {
@@ -67,10 +61,6 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     return NextResponse.json({ success: true, data: company }, { status: 200 });
   } catch (error) {
     console.error('Delete company error:', error);
-    const status = error instanceof Error && error.message === 'Forbidden' ? 403 : 500;
-    return NextResponse.json(
-      { success: false, error: status === 403 ? 'Forbidden' : 'Failed to delete company' },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to delete company' }, { status: 500 });
   }
 }

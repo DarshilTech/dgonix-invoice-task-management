@@ -11,11 +11,16 @@ export const lineItemSchema = z.object({
 
 export const createInvoiceSchema = z.object({
   tenantId: z.string().optional(),
-  companyId: z.string().min(1, 'Company is required'),
+  companyId: z.string().optional(),
   clientId: z.string().min(1, 'Client is required'),
   invoiceDate: dateInput,
   dueDate: dateInput,
   lineItems: z.array(lineItemSchema).min(1, 'At least one line item is required'),
+  discount:     z.number().min(0).optional().default(0),
+  discountType: z.enum(['Amount', 'Percent']).optional().default('Amount'),
+  partial:      z.number().min(0).optional().default(0),
+  invoiceNumber: z.string().optional(),
+  poNumber:      z.string().optional(),
   taxRate: z.number().optional(),
   notes: z.string().optional(),
   terms: z.string().optional(),

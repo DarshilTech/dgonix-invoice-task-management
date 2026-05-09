@@ -59,6 +59,21 @@ const companyConfigSchema = new Schema<ICompanyConfig>(
   { timestamps: true }
 );
 
+// Drop the stale tenantId_1 unique index that conflicts with the current schema.
+// This is idempotent — silently ignored when the index no longer exists.
+async function dropStaleIndexes() {
+  try {
+    const conn = mongoose.connection;
+    if (conn.readyState === 1) {
+      await conn.db?.collection('companyconfigs').dropIndex('tenantId_1');
+    }
+  } catch {
+    // Index doesn't exist or already dropped — nothing to do
+  }
+}
+
+mongoose.connection.once('connected', () => { dropStaleIndexes(); });
+
 // In development, delete the cached model so hot-reloads pick up schema changes
 if (process.env.NODE_ENV !== 'production') {
   delete (mongoose.models as Record<string, unknown>).CompanyConfig;

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
+import Image from 'next/image';
 import { RegionSelect } from '@/components/ui/RegionSelect';
 
 type Tab = 'profile' | 'company' | 'payments';
@@ -34,6 +36,7 @@ const emptyConfigForm = {
 };
 
 export default function AdminSettingsPage() {
+  useDocumentTitle('Settings');
   const [activeTab, setActiveTab] = useState<Tab>('profile');
 
   // ── Profile tab ────────────────────────────────────────────────────────────
@@ -153,19 +156,29 @@ export default function AdminSettingsPage() {
     setConfigLoading(false);
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 1 * 1024 * 1024) {
+    if (file.size > 5 * 1024 * 1024) {
       setConfigErr(true);
-      setConfigMsg('Image must be under 1 MB');
+      setConfigMsg('Image must be under 5 MB');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setConfigForm((prev) => ({ ...prev, logo: ev.target?.result as string }));
-    };
-    reader.readAsDataURL(file);
+    setConfigMsg('Uploading logo…');
+    setConfigErr(false);
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', 'logos');
+    try {
+      const res = await fetch('/api/upload', { method: 'POST', body: formData, credentials: 'include' });
+      const data = await res.json();
+      if (!res.ok) { setConfigErr(true); setConfigMsg(data.error || 'Logo upload failed'); return; }
+      setConfigForm((prev) => ({ ...prev, logo: data.data.url }));
+      setConfigMsg('Logo uploaded. Save configuration to apply.');
+    } catch {
+      setConfigErr(true);
+      setConfigMsg('Logo upload failed');
+    }
   };
 
   const handleConfigSave = async (e: React.FormEvent) => {
@@ -234,7 +247,7 @@ export default function AdminSettingsPage() {
   ];
 
   return (
-    <div>
+    <div className="py-6">
       <div className="mb-8">
         <h1 className="section-title">Settings</h1>
         <p className="section-subtitle">Manage your profile, company configuration, and preferences</p>
@@ -259,7 +272,7 @@ export default function AdminSettingsPage() {
 
       {/* ── Admin Profile ──────────────────────────────────────────────────── */}
       {activeTab === 'profile' && (
-        <div className="space-y-6">
+        <div className="space-y-6 py-6">
           {profileLoading ? (
             <div className="card"><div className="card-body text-center text-gray-500">Loading...</div></div>
           ) : (
@@ -272,15 +285,15 @@ export default function AdminSettingsPage() {
                 <form onSubmit={handleProfileSave} className="card-body grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="label">First Name</label>
-                    <input className="input" value={profile.firstName} onChange={(e) => setProfile((p) => ({ ...p, firstName: e.target.value }))} required />
+                    <input name="firstName" className="input" value={profile.firstName} onChange={(e) => setProfile((p) => ({ ...p, firstName: e.target.value }))} required autoComplete="given-name" />
                   </div>
                   <div>
                     <label className="label">Last Name</label>
-                    <input className="input" value={profile.lastName} onChange={(e) => setProfile((p) => ({ ...p, lastName: e.target.value }))} />
+                    <input name="lastName" className="input" value={profile.lastName} onChange={(e) => setProfile((p) => ({ ...p, lastName: e.target.value }))} autoComplete="family-name" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="label">Email</label>
-                    <input type="email" className="input" value={profile.email} onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))} required />
+                    <input type="email" name="email" className="input" value={profile.email} onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))} required autoComplete="email" />
                   </div>
                   <div className="md:col-span-2 flex justify-end">
                     <button type="submit" className="btn btn-primary" disabled={profileSaving}>{profileSaving ? 'Saving...' : 'Save Profile'}</button>
@@ -296,15 +309,15 @@ export default function AdminSettingsPage() {
                 <form onSubmit={handlePasswordChange} className="card-body grid gap-4 md:grid-cols-2">
                   <div className="md:col-span-2">
                     <label className="label">Current Password</label>
-                    <input type="password" className="input" value={pwForm.currentPassword} onChange={(e) => setPwForm((p) => ({ ...p, currentPassword: e.target.value }))} required />
+                    <input type="password" name="currentPassword" className="input" value={pwForm.currentPassword} onChange={(e) => setPwForm((p) => ({ ...p, currentPassword: e.target.value }))} required autoComplete="current-password" />
                   </div>
                   <div>
                     <label className="label">New Password</label>
-                    <input type="password" className="input" value={pwForm.newPassword} onChange={(e) => setPwForm((p) => ({ ...p, newPassword: e.target.value }))} required minLength={8} />
+                    <input type="password" name="newPassword" className="input" value={pwForm.newPassword} onChange={(e) => setPwForm((p) => ({ ...p, newPassword: e.target.value }))} required minLength={8} autoComplete="new-password" />
                   </div>
                   <div>
                     <label className="label">Confirm New Password</label>
-                    <input type="password" className="input" value={pwForm.confirmPassword} onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))} required />
+                    <input type="password" name="confirmPassword" className="input" value={pwForm.confirmPassword} onChange={(e) => setPwForm((p) => ({ ...p, confirmPassword: e.target.value }))} required autoComplete="new-password" />
                   </div>
                   <div className="md:col-span-2 flex justify-end">
                     <button type="submit" className="btn btn-primary" disabled={pwSaving}>{pwSaving ? 'Changing...' : 'Change Password'}</button>
@@ -318,7 +331,7 @@ export default function AdminSettingsPage() {
 
       {/* ── Company Configuration ──────────────────────────────────────────── */}
       {activeTab === 'company' && (
-        <div className="space-y-6">
+        <div className="space-y-6 py-6">
           {configLoading ? (
             <div className="card"><div className="card-body text-center text-gray-500">Loading...</div></div>
           ) : (
@@ -333,7 +346,7 @@ export default function AdminSettingsPage() {
                   <div className="card-header"><h2 className="font-semibold">Company Logo</h2></div>
                   <div className="card-body flex items-center gap-6">
                     {configForm.logo ? (
-                      <img src={configForm.logo} alt="Logo" className="h-20 w-20 rounded-lg border border-gray-200 object-contain" />
+                      <Image src={configForm.logo} alt="Logo" width={80} height={80} className="h-20 w-20 rounded-lg border border-gray-200 object-contain" />
                     ) : (
                       <div className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 text-xs text-gray-400">No logo</div>
                     )}
@@ -351,31 +364,31 @@ export default function AdminSettingsPage() {
                   <div className="card-body grid gap-4 md:grid-cols-2">
                     <div>
                       <label className="label">Company Name</label>
-                      <input className="input" value={configForm.companyName} onChange={setField('companyName')} placeholder="Your Company Ltd." />
+                      <input name="companyName" className="input" value={configForm.companyName} onChange={setField('companyName')} placeholder="Your Company Ltd." />
                     </div>
                     <div>
                       <label className="label">Company Email</label>
-                      <input type="email" className="input" value={configForm.companyEmail} onChange={setField('companyEmail')} placeholder="contact@yourcompany.com" />
+                      <input type="email" name="companyEmail" className="input" value={configForm.companyEmail} onChange={setField('companyEmail')} placeholder="contact@yourcompany.com" />
                     </div>
                     <div>
                       <label className="label">Phone</label>
-                      <input className="input" value={configForm.phone} onChange={setField('phone')} placeholder="+1 555 000 0000" />
+                      <input name="phone" className="input" value={configForm.phone} onChange={setField('phone')} placeholder="+1 555 000 0000" />
                     </div>
                     <div>
                       <label className="label">Website</label>
-                      <input type="url" className="input" value={configForm.website} onChange={setField('website')} placeholder="https://yourcompany.com" />
+                      <input type="url" name="website" className="input" value={configForm.website} onChange={setField('website')} placeholder="https://yourcompany.com" />
                     </div>
                     <div className="md:col-span-2">
                       <label className="label">Street Address</label>
-                      <input className="input" value={configForm.address} onChange={setField('address')} />
+                      <input name="address" className="input" value={configForm.address} onChange={setField('address')} />
                     </div>
                     <div>
                       <label className="label">City</label>
-                      <input className="input" value={configForm.city} onChange={setField('city')} />
+                      <input name="city" className="input" value={configForm.city} onChange={setField('city')} />
                     </div>
                     <div>
                       <label className="label">Zip / Postal Code</label>
-                      <input className="input" value={configForm.zip} onChange={setField('zip')} />
+                      <input name="zip" className="input" value={configForm.zip} onChange={setField('zip')} />
                     </div>
                     <RegionSelect
                       country={configForm.country}
@@ -385,11 +398,11 @@ export default function AdminSettingsPage() {
                     />
                     <div>
                       <label className="label">GST / Tax ID</label>
-                      <input className="input" value={configForm.taxId} onChange={setField('taxId')} />
+                      <input name="taxId" className="input" value={configForm.taxId} onChange={setField('taxId')} />
                     </div>
                     <div>
                       <label className="label">Invoice Prefix</label>
-                      <input className="input" value={configForm.invoicePrefix} onChange={setField('invoicePrefix')} placeholder="INV" />
+                      <input name="invoicePrefix" className="input" value={configForm.invoicePrefix} onChange={setField('invoicePrefix')} placeholder="INV" />
                     </div>
                   </div>
                 </div>
@@ -403,28 +416,28 @@ export default function AdminSettingsPage() {
                   <div className="card-body grid gap-4 md:grid-cols-2">
                     <div>
                       <label className="label">From Email</label>
-                      <input type="email" className="input" value={configForm.fromEmail} onChange={setField('fromEmail')} placeholder="invoices@yourcompany.com" />
+                      <input type="email" name="fromEmail" className="input" value={configForm.fromEmail} onChange={setField('fromEmail')} placeholder="invoices@yourcompany.com" />
                     </div>
                     <div>
                       <label className="label">Sender Name</label>
-                      <input className="input" value={configForm.senderName} onChange={setField('senderName')} placeholder="DGONIX Technologies" />
+                      <input name="senderName" className="input" value={configForm.senderName} onChange={setField('senderName')} placeholder="Invoxa by Dgonix" />
                       <p className="mt-1 text-xs text-gray-500">Shown as the sender in the recipient's inbox</p>
                     </div>
                     <div>
                       <label className="label">SMTP Host</label>
-                      <input className="input" value={configForm.smtpHost} onChange={setField('smtpHost')} placeholder="smtp.gmail.com" />
+                      <input name="smtpHost" className="input" value={configForm.smtpHost} onChange={setField('smtpHost')} placeholder="smtp.gmail.com" />
                     </div>
                     <div>
                       <label className="label">SMTP Port</label>
-                      <input type="number" className="input" value={configForm.smtpPort} onChange={setField('smtpPort')} placeholder="587" />
+                      <input type="number" name="smtpPort" className="input" value={configForm.smtpPort} onChange={setField('smtpPort')} placeholder="587" />
                     </div>
                     <div>
                       <label className="label">SMTP Username</label>
-                      <input className="input" value={configForm.smtpUser} onChange={setField('smtpUser')} />
+                      <input name="smtpUser" className="input" value={configForm.smtpUser} onChange={setField('smtpUser')} />
                     </div>
                     <div>
                       <label className="label">SMTP Password</label>
-                      <input type="password" className="input" value={configForm.smtpPass} onChange={setField('smtpPass')} />
+                      <input type="password" name="smtpPass" className="input" value={configForm.smtpPass} onChange={setField('smtpPass')} />
                     </div>
                   </div>
                 </div>
@@ -442,7 +455,7 @@ export default function AdminSettingsPage() {
 
       {/* ── Payment Methods ────────────────────────────────────────────────── */}
       {activeTab === 'payments' && (
-        <div className="space-y-6">
+        <div className="space-y-6 py-6">
           {methodMsg && (
             <div className={`rounded-lg border px-4 py-3 text-sm ${methodErr ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{methodMsg}</div>
           )}
@@ -454,7 +467,7 @@ export default function AdminSettingsPage() {
             <form onSubmit={submitPaymentMethod} className="card-body space-y-4">
               <div>
                 <label className="label">Name</label>
-                <input className="input" value={methodForm.name} onChange={(e) => setMethodForm((p) => ({ ...p, name: e.target.value }))} placeholder="Bank Transfer" required />
+                <input name="name" className="input" value={methodForm.name} onChange={(e) => setMethodForm((p) => ({ ...p, name: e.target.value }))} placeholder="Bank Transfer" required />
               </div>
               <div>
                 <label className="label">Description</label>

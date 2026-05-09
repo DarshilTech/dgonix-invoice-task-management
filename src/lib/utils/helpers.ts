@@ -25,6 +25,7 @@ export function generateInvoiceNumber(prefix: string, count: number): string {
   return `${prefix}-${paddedNumber}`;
 }
 
+
 export function generatePasswordResetToken(): string {
   return Buffer.from(`${Date.now()}-${Math.random()}`).toString('base64');
 }

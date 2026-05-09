@@ -1,5 +1,14 @@
 import nodemailer from 'nodemailer';
 
+function buildDefaultFrom(): string {
+  const name = process.env.SMTP_NAME || 'Invoxa by Dgonix';
+  const email =
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    'noreply@example.com';
+  return name ? `"${name}" <${email}>` : email;
+}
+
 export async function createEmailTransporter(smtpConfig?: {
   host: string;
   port: number;
@@ -44,7 +53,8 @@ export async function sendEmail(options: {
 }): Promise<void> {
   const transporter = await createEmailTransporter(options.smtpConfig);
 
-  const from = options.from || options.smtpConfig?.from || process.env.SMTP_FROM || 'noreply@example.com';
+  // Priority: caller-supplied from → per-tenant from → env default (with display name)
+  const from = options.from || options.smtpConfig?.from || buildDefaultFrom();
 
   await transporter.sendMail({
     from,

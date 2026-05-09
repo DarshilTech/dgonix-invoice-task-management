@@ -3,7 +3,6 @@ import connectDB from '@/lib/db/connect';
 import { Invoice, Company, Client, CompanyConfig } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { generateInvoicePDF } from '@/lib/pdf/generateInvoicePDF';
-import { getAccessibleTenantIds, getPrimaryTenantId } from '@/services/tenantAccess';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -15,15 +14,13 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     await connectDB();
 
-    const query: Record<string, any> = { _id: params.id };
+    let invoice;
     if (auth.payload.role === 'admin') {
-      query.tenantId = { $in: getAccessibleTenantIds(auth.payload) };
+      const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
+      invoice = await Invoice.findOne({ _id: params.id, tenantId: { $in: ownedCompanies.map((c) => c._id) } });
     } else {
-      query.tenantId = getPrimaryTenantId(auth.payload);
-      query.clientId = auth.payload.clientId;
+      invoice = await Invoice.findOne({ _id: params.id, tenantId: auth.payload.tenantId, clientId: auth.payload.clientId });
     }
-
-    const invoice = await Invoice.findOne(query);
 
     if (!invoice) {
       return NextResponse.json({ success: false, error: 'Invoice not found' }, { status: 404 });
@@ -59,16 +56,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
         country: config?.country || company.country,
         logo: config?.logo || company.logo,
         website: config?.website,
-        wiseTransferRef: config?.wiseTransferRef || company.wiseTransferRef,
+        wiseTransferRef: config?.wiseTransferRef,
       },
       client: {
         name: client.name,
         email: client.email,
-        address: client.address,
-        city: client.city,
-        state: client.state,
-        zip: client.zip,
-        country: client.country,
+        address: client.billingStreet,
+        city: client.billingCity,
+        state: client.billingState,
+        zip: client.billingPostalCode,
+        country: client.billingCountry,
       },
       lineItems: invoice.lineItems,
       subtotal: invoice.subtotal,

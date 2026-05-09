@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 interface Payment {
@@ -29,6 +30,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 export default function AdminPaymentsPage() {
+  useDocumentTitle('Payments');
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
@@ -74,7 +76,7 @@ export default function AdminPaymentsPage() {
   const confirmedTotal = payments.filter(p => p.status === 'confirmed').reduce((s, p) => s + p.amount, 0);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 py-6">
 
       <ConfirmModal
         open={confirmModal.open}

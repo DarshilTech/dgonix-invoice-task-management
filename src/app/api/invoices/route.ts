@@ -3,12 +3,8 @@ import connectDB from '@/lib/db/connect';
 import { Invoice, Company, Client } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { createInvoiceSchema } from '@/lib/validation/invoice';
-import { generateInvoiceNumber, generatePaymentReference } from '@/lib/utils/helpers';
+import { generatePaymentReference } from '@/lib/utils/helpers';
 import { calculateInvoiceTotals } from '@/services/invoiceService';
-import {
-  getAccessibleTenantIds,
-  requireTenantAccess,
-} from '@/services/tenantAccess';
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,45 +21,36 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '10', 10)));
     const status = searchParams.get('status');
     const clientId = searchParams.get('clientId');
-    const tenantId = searchParams.get('tenantId') || searchParams.get('companyId') || undefined;
+    const companyId = searchParams.get('tenantId') || searchParams.get('companyId') || undefined;
     const search = searchParams.get('search') || '';
 
-    const tenantIds = getAccessibleTenantIds(auth.payload);
-    const query: Record<string, any> = {};
+    const query: Record<string, unknown> = {};
 
-    if (tenantId) {
-      requireTenantAccess(auth.payload, tenantId);
-      query.tenantId = tenantId;
-    } else if (auth.payload.role === 'admin') {
-      if (tenantIds.length === 0) {
-        return NextResponse.json(
-          { success: true, data: { invoices: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } } },
-          { status: 200 }
-        );
+    if (auth.payload.role === 'admin') {
+      if (companyId) {
+        const company = await Company.findOne({ _id: companyId, ownerId: auth.payload.userId });
+        if (!company) {
+          return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
+        }
+        query.tenantId = companyId;
+      } else {
+        const ownedCompanies = await Company.find({ ownerId: auth.payload.userId }).select('_id');
+        if (ownedCompanies.length === 0) {
+          return NextResponse.json(
+            { success: true, data: { invoices: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } } },
+            { status: 200 }
+          );
+        }
+        query.tenantId = { $in: ownedCompanies.map((c) => c._id) };
       }
-      query.tenantId = { $in: tenantIds };
     } else {
-      if (tenantIds.length === 0) {
-        return NextResponse.json(
-          { success: true, data: { invoices: [], pagination: { total: 0, page: 1, limit, totalPages: 0 } } },
-          { status: 200 }
-        );
-      }
-      query.tenantId = tenantIds[0];
+      query.tenantId = auth.payload.tenantId;
       query.clientId = auth.payload.clientId;
     }
 
-    if (status && status !== 'all') {
-      query.status = status;
-    }
-
-    if (clientId && auth.payload.role === 'admin') {
-      query.clientId = clientId;
-    }
-
-    if (search) {
-      query.invoiceNumber = { $regex: search, $options: 'i' };
-    }
+    if (status && status !== 'all') query.status = status;
+    if (clientId && auth.payload.role === 'admin') query.clientId = clientId;
+    if (search) query.invoiceNumber = { $regex: search, $options: 'i' };
 
     const skip = (page - 1) * limit;
 
@@ -82,23 +69,14 @@ export async function GET(request: NextRequest) {
         success: true,
         data: {
           invoices,
-          pagination: {
-            total,
-            page,
-            limit,
-            totalPages: Math.ceil(total / limit),
-          },
+          pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
         },
       },
       { status: 200 }
     );
   } catch (error) {
     console.error('Get invoices error:', error);
-    const status = error instanceof Error && error.message === 'Forbidden' ? 403 : 500;
-    return NextResponse.json(
-      { success: false, error: status === 403 ? 'Forbidden' : 'Failed to fetch invoices' },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to fetch invoices' }, { status: 500 });
   }
 }
 
@@ -123,37 +101,52 @@ export async function POST(request: NextRequest) {
     }
 
     const {
-      companyId,
-      clientId,
-      invoiceDate,
-      dueDate,
-      lineItems,
-      taxRate,
-      notes,
-      terms,
-      currency,
-      status,
+      clientId, invoiceDate, dueDate, lineItems, taxRate, notes, terms, currency, status,
+      discount, discountType, partial, poNumber, invoiceNumber: customInvoiceNumber,
     } = validation.data;
-    const tenantId = validation.data.tenantId || companyId;
-    requireTenantAccess(auth.payload, tenantId);
 
-    const company = await Company.findById(tenantId);
+    // Auto-find the user's company if no tenantId supplied
+    const rawTenantId = validation.data.tenantId || validation.data.companyId;
+    const company = rawTenantId
+      ? await Company.findOne({ _id: rawTenantId, ownerId: auth.payload.userId }).lean() as { _id: unknown; invoicePrefix?: string } | null
+      : await Company.findOne({ ownerId: auth.payload.userId }).lean() as { _id: unknown; invoicePrefix?: string } | null;
+
     if (!company) {
       return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
     }
 
-    const client = await Client.findOne({
-      _id: clientId,
-      tenantId,
-    });
+    const tenantId = String(company._id);
+
+    const client = await Client.findOne({ _id: clientId, tenantId });
     if (!client) {
       return NextResponse.json({ success: false, error: 'Client not found' }, { status: 404 });
     }
 
-    const totals = calculateInvoiceTotals(lineItems, taxRate || 0);
-    const invoiceCount = await Invoice.countDocuments({ tenantId });
-    const invoiceNumber = generateInvoiceNumber(company.invoicePrefix, invoiceCount);
+    const prefix = company.invoicePrefix || 'INV';
+
+    // Derive next sequence from actual invoices — always starts at 1 for new companies
+    const lastInvoice = await Invoice.findOne({ tenantId })
+      .sort({ createdAt: -1 })
+      .select('invoiceNumber')
+      .lean() as { invoiceNumber?: string } | null;
+
+    const existingMaxSeq = (() => {
+      if (!lastInvoice?.invoiceNumber) return 0;
+      const parts = String(lastInvoice.invoiceNumber).split('-');
+      return parseInt(parts[parts.length - 1], 10) || 0;
+    })();
+
+    const seq = existingMaxSeq + 1;
+
+    // Keep Company.invoiceSequence in sync
+    await Company.updateOne({ _id: tenantId }, { $set: { invoiceSequence: seq } });
+
+    // Use custom number if provided, otherwise auto-generate
+    const invoiceNumber = customInvoiceNumber?.trim()
+      ? customInvoiceNumber.trim()
+      : `${prefix}-${String(seq).padStart(6, '0')}`;
     const paymentReference = generatePaymentReference();
+    const totals = calculateInvoiceTotals(lineItems, taxRate || 0, discount || 0, discountType || 'Amount');
 
     const invoice = await Invoice.create({
       tenantId,
@@ -164,32 +157,27 @@ export async function POST(request: NextRequest) {
       dueDate: new Date(dueDate),
       paymentReference,
       status,
-      lineItems: totals.lineItems,
-      subtotal: totals.subtotal,
+      lineItems:      totals.lineItems,
+      discount:       discount || 0,
+      discountType:   discountType || 'Amount',
+      discountAmount: totals.discountAmount,
+      partial:        partial || 0,
+      poNumber:       poNumber || '',
+      subtotal:       totals.subtotal,
       taxRate,
-      taxAmount: totals.taxAmount,
-      total: totals.total,
-      totalAmount: totals.totalAmount,
-      paidAmount: 0,
-      balanceAmount: totals.balanceAmount,
+      taxAmount:      totals.taxAmount,
+      total:          totals.total,
+      totalAmount:    totals.totalAmount,
+      paidAmount:     0,
+      balanceAmount:  totals.balanceAmount,
       currency,
       notes,
       terms,
     });
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: invoice,
-      },
-      { status: 201 }
-    );
+    return NextResponse.json({ success: true, data: invoice }, { status: 201 });
   } catch (error) {
     console.error('Create invoice error:', error);
-    const status = error instanceof Error && error.message === 'Forbidden' ? 403 : 500;
-    return NextResponse.json(
-      { success: false, error: status === 403 ? 'Forbidden' : 'Failed to create invoice' },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to create invoice' }, { status: 500 });
   }
 }

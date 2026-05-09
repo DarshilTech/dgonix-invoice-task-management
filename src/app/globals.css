@@ -61,6 +61,10 @@
     @apply w-full rounded-lg border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-900 shadow-sm outline-none transition placeholder:text-gray-400
     focus:border-primary-400 focus:ring-2 focus:ring-primary-400/20;
   }
+  .auth-input {
+    @apply w-full rounded-xl border-0 bg-slate-100 px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400
+    focus:bg-slate-200/70 focus:ring-2 focus:ring-primary-400/30;
+  }
   .label {
     @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-gray-500;
   }

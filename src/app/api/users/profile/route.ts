@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    const user = await User.findById(auth.payload.userId).select('firstName lastName email role');
+    const user = await User.findById(auth.payload.userId).select('firstName lastName email role emailVerified');
     if (!user) {
       return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 });
     }
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
+        emailVerified: user.emailVerified,
       },
     });
   } catch (error) {

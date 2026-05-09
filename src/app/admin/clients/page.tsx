@@ -1,80 +1,87 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { RegionSelect } from '@/components/ui/RegionSelect';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 
-type Company = { _id: string; name: string };
 type Client = {
   _id: string;
-  tenantId: string;
-  companyId: string;
   name: string;
   email: string;
-  contactPerson?: string;
-  phone?: string;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  country: string;
+  idNumber?: string;
   status: 'active' | 'inactive';
-  portalAccess: boolean;
+  balance: number;
+  paidToDate: number;
+  createdAt: string;
 };
 
-const emptyForm = {
-  companyId: '', name: '', email: '', contactPerson: '', phone: '',
-  address: '', city: '', state: '', zip: '', country: '', taxId: '', portalAccess: true,
-};
+const fmt = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(n);
+
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+const LIMIT_OPTIONS = [10, 25, 50];
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button onClick={copy} className="ml-1.5 text-gray-300 hover:text-gray-500 transition-colors" title="Copy email">
+      {copied ? (
+        <svg className="h-3.5 w-3.5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+        </svg>
+      ) : (
+        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+function SortIcon() {
+  return (
+    <svg className="ml-1 inline h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+    </svg>
+  );
+}
 
 export default function AdminClientsPage() {
+  useDocumentTitle('Clients');
+  const router = useRouter();
   const [clients, setClients] = useState<Client[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [form, setForm] = useState(emptyForm);
-  const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [lifecycle, setLifecycle] = useState('active');
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [isError, setIsError] = useState(false);
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; clientId: string; clientName: string }>({ open: false, clientId: '', clientName: '' });
   const [isDeleting, setIsDeleting] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search);
 
-  useEffect(() => {
-    if (!message) return;
-    const t = setTimeout(() => setMessage(''), 4000);
-    return () => clearTimeout(t);
-  }, [message]);
-
-  const selectedCompanyId = useMemo(
-    () => form.companyId || companies[0]?._id || '',
-    [companies, form.companyId]
-  );
-
-  useEffect(() => { fetchCompanies(); }, []);
-  useEffect(() => { fetchClients(); }, [debouncedSearch, page]);
-
-  const fetchCompanies = async () => {
-    const res = await fetch('/api/companies', { credentials: 'include' });
-    const data = await res.json();
-    if (data.success) {
-      setCompanies(data.data || []);
-      setForm((prev) => ({ ...prev, companyId: prev.companyId || data.data?.[0]?._id || '' }));
-    }
-  };
+  useEffect(() => { setPage(1); }, [debouncedSearch, lifecycle, limit]);
+  useEffect(() => { fetchClients(); }, [debouncedSearch, lifecycle, page, limit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchClients = async () => {
     setIsLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: '10' });
+    const params = new URLSearchParams({ page: String(page), limit: String(limit) });
     if (debouncedSearch) params.set('search', debouncedSearch);
+    if (lifecycle && lifecycle !== 'all') params.set('status', lifecycle);
     const res = await fetch(`/api/clients?${params}`, { credentials: 'include' });
     const data = await res.json();
     if (data.success) {
@@ -85,68 +92,20 @@ export default function AdminClientsPage() {
     setIsLoading(false);
   };
 
-  const resetForm = () => {
-    setEditingClient(null);
-    setForm({ ...emptyForm, companyId: companies[0]?._id || '' });
-    setShowForm(false);
-  };
-
-  const submitClient = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsSaving(true);
-    const payload = { ...form, companyId: selectedCompanyId, tenantId: selectedCompanyId };
-    const url = editingClient ? `/api/clients/${editingClient._id}` : '/api/clients';
-    const method = editingClient ? 'PUT' : 'POST';
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    setIsSaving(false);
-    if (!res.ok) { setIsError(true); setMessage(data.error || 'Could not save client'); return; }
-    setIsError(false);
-    setMessage(editingClient ? 'Client updated.' : 'Client created.');
-    resetForm();
+  const executeDelete = async () => {
+    setIsDeleting(true);
+    await fetch(`/api/clients/${confirmModal.clientId}`, { method: 'DELETE', credentials: 'include' });
+    setIsDeleting(false);
+    setConfirmModal({ open: false, clientId: '', clientName: '' });
     fetchClients();
   };
 
-  const editClient = (client: Client) => {
-    setEditingClient(client);
-    setForm({
-      companyId: client.tenantId || client.companyId,
-      name: client.name, email: client.email,
-      contactPerson: client.contactPerson || '', phone: client.phone || '',
-      address: client.address, city: client.city, state: client.state,
-      zip: client.zip, country: client.country, taxId: '', portalAccess: client.portalAccess,
-    });
-    setShowForm(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  const confirmDelete = (client: Client) => {
-    setConfirmModal({ open: true, clientId: client._id, clientName: client.name });
-  };
-
-  const executeDelete = async () => {
-    setIsDeleting(true);
-    const res = await fetch(`/api/clients/${confirmModal.clientId}`, { method: 'DELETE', credentials: 'include' });
-    const data = await res.json();
-    setIsDeleting(false);
-    setConfirmModal({ open: false, clientId: '', clientName: '' });
-    setIsError(!res.ok);
-    setMessage(res.ok ? 'Client deleted.' : data.error || 'Could not delete client');
-    if (res.ok) fetchClients();
-  };
-
   return (
-    <div className="space-y-6">
-
+    <div className="space-y-4 py-6">
       <ConfirmModal
         open={confirmModal.open}
         title="Delete Client"
-        description={`Are you sure you want to delete "${confirmModal.clientName}"? This will permanently remove all associated records and cannot be undone.`}
+        description={`Delete "${confirmModal.clientName}"? This cannot be undone.`}
         confirmLabel="Delete Client"
         onConfirm={executeDelete}
         onCancel={() => setConfirmModal({ open: false, clientId: '', clientName: '' })}
@@ -154,178 +113,187 @@ export default function AdminClientsPage() {
         danger
       />
 
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="section-title">Clients</h1>
-          <p className="section-subtitle">{totalCount > 0 ? `${totalCount} client${totalCount !== 1 ? 's' : ''}` : 'Manage your client accounts'}</p>
-        </div>
-        <button className="btn btn-primary" onClick={() => { setShowForm(true); setEditingClient(null); setForm({ ...emptyForm, companyId: companies[0]?._id || '' }); }} type="button">
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
-          Add Client
+      <PageHeader
+        title="Clients"
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/admin/dashboard', home: true },
+          { label: 'Clients' },
+        ]}
+      />
+
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          name="search"
+          className="input max-w-[180px] text-sm"
+          placeholder="Filter…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="input w-auto text-sm"
+          value={lifecycle}
+          onChange={(e) => setLifecycle(e.target.value)}
+        >
+          <option value="active">Lifecycle: Active</option>
+          <option value="inactive">Lifecycle: Inactive</option>
+          <option value="all">Lifecycle: All</option>
+        </select>
+
+        <div className="flex-1" />
+
+        <button className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1.5">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 0v10m0-10a2 2 0 012 2h2a2 2 0 012-2V7" />
+          </svg>
+          Columns
         </button>
+        <button className="h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-1.5">
+          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          Import
+        </button>
+        <Link
+          href="/admin/clients/create"
+          className="h-9 rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-700 transition-colors flex items-center gap-1.5"
+        >
+          New Client
+        </Link>
       </div>
 
-      {message && (
-        <div className={isError ? 'alert-error' : 'alert-success'}>{message}</div>
-      )}
-
-      {/* Form */}
-      {showForm && (
-        <form onSubmit={submitClient} className="card animate-slide-up">
-          <div className="card-header">
-            <h2 className="font-semibold">{editingClient ? 'Edit Client' : 'New Client'}</h2>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={resetForm}>Cancel</button>
-          </div>
-          <div className="card-body grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="label">Company</label>
-              <select className="input" value={selectedCompanyId} onChange={(e) => setForm((p) => ({ ...p, companyId: e.target.value }))} required>
-                {companies.map((c) => <option key={c._id} value={c._id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Client Name *</label>
-              <input className="input" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} required />
-            </div>
-            <div>
-              <label className="label">Email *</label>
-              <input className="input" type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} required />
-            </div>
-            <div>
-              <label className="label">Contact Person</label>
-              <input className="input" value={form.contactPerson} onChange={(e) => setForm((p) => ({ ...p, contactPerson: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label">Phone</label>
-              <input className="input" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label">Street Address</label>
-              <input className="input" value={form.address} onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))} required />
-            </div>
-            <div>
-              <label className="label">City</label>
-              <input className="input" value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} required />
-            </div>
-            <div>
-              <label className="label">Zip / Postal Code</label>
-              <input className="input" value={form.zip} onChange={(e) => setForm((p) => ({ ...p, zip: e.target.value }))} required />
-            </div>
-            <RegionSelect
-              country={form.country}
-              state={form.state}
-              onCountryChange={(v) => setForm((p) => ({ ...p, country: v, state: '' }))}
-              onStateChange={(v) => setForm((p) => ({ ...p, state: v }))}
-              required
-            />
-            <div className="md:col-span-2 flex items-center gap-2 pt-1">
-              <input type="checkbox" id="portalAccess" checked={form.portalAccess} onChange={(e) => setForm((p) => ({ ...p, portalAccess: e.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-              <label htmlFor="portalAccess" className="text-sm text-gray-700">Enable client portal access (OTP login)</label>
-            </div>
-          </div>
-          <div className="flex gap-3 border-t border-gray-100 px-6 py-4">
-            <button className="btn btn-primary" type="submit" disabled={isSaving}>
-              {isSaving ? 'Saving...' : editingClient ? 'Save Changes' : 'Create Client'}
-            </button>
-            <button className="btn btn-secondary" onClick={resetForm} type="button">Cancel</button>
-          </div>
-        </form>
-      )}
-
-      {/* Search */}
-      <div className="search-wrap">
-        <svg className="search-icon h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input className="input max-w-sm pl-9" placeholder="Search clients by name or email…" value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} />
-      </div>
-
-      {/* Table (desktop) + Cards (mobile) */}
-      {isLoading ? (
-        <div className="card divide-y divide-gray-50">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-4 px-5 py-4 animate-skeleton">
-              <div className="h-8 w-8 rounded-full skeleton shrink-0" />
-              <div className="flex-1 space-y-1.5"><div className="h-4 w-40 skeleton" /><div className="h-3 w-28 skeleton" /></div>
-              <div className="h-6 w-16 skeleton rounded-full" />
-            </div>
-          ))}
-        </div>
-      ) : clients.length === 0 ? (
-        <EmptyState title="No clients yet" description="Add your first client to start issuing invoices." />
-      ) : (
-        <>
-          {/* Desktop table */}
-          <div className="card hidden md:block">
-            <div className="overflow-x-auto">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Client</th>
-                    <th>Contact</th>
-                    <th>Location</th>
-                    <th>Status</th>
-                    <th>Portal</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map((c) => (
-                    <tr key={c._id}>
-                      <td>
-                        <div className="font-semibold text-gray-900">{c.name}</div>
-                        <div className="text-xs text-gray-400">{c.email}</div>
-                      </td>
-                      <td className="text-gray-600">{c.contactPerson || c.phone || '—'}</td>
-                      <td className="text-gray-600">{[c.city, c.country].filter(Boolean).join(', ') || '—'}</td>
-                      <td><span className={`badge ${c.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>{c.status}</span></td>
-                      <td>
-                        <span className={`badge ${c.portalAccess ? 'badge-active' : 'badge-inactive'}`}>
-                          {c.portalAccess ? 'Enabled' : 'Disabled'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="flex items-center justify-end gap-3">
-                          <button className="text-sm font-medium text-primary-600 hover:text-primary-700" onClick={() => editClient(c)} type="button">Edit</button>
-                          <button className="text-sm font-medium text-red-600 hover:text-red-700" onClick={() => confirmDelete(c)} type="button">Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Mobile cards */}
-          <div className="grid gap-3 md:hidden">
-            {clients.map((c) => (
-              <div className="card p-4" key={c._id}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{c.name}</h3>
-                    <p className="text-sm text-gray-500">{c.email}</p>
-                    {(c.city || c.country) && <p className="mt-0.5 text-xs text-gray-400">{[c.city, c.country].filter(Boolean).join(', ')}</p>}
-                  </div>
-                  <span className={`badge shrink-0 ${c.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>{c.status}</span>
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <button className="btn btn-secondary btn-sm flex-1" onClick={() => editClient(c)} type="button">Edit</button>
-                  <button className="btn btn-danger btn-sm flex-1" onClick={() => confirmDelete(c)} type="button">Delete</button>
-                </div>
+      {/* Table */}
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        {isLoading ? (
+          <div className="divide-y divide-gray-50">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 px-5 py-4">
+                <div className="h-4 w-4 rounded bg-gray-100 animate-pulse" />
+                <div className="h-4 w-40 rounded bg-gray-100 animate-pulse" />
+                <div className="h-4 w-48 rounded bg-gray-100 animate-pulse flex-1" />
+                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
+                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
+                <div className="h-4 w-20 rounded bg-gray-100 animate-pulse" />
+                <div className="h-4 w-24 rounded bg-gray-100 animate-pulse" />
               </div>
             ))}
           </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between">
-            <button className="btn btn-secondary" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} type="button">← Previous</button>
-            <span className="text-sm text-gray-500">Page {page} of {totalPages}</span>
-            <button className="btn btn-secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} type="button">Next →</button>
+        ) : clients.length === 0 ? (
+          <div className="px-5 py-16 text-center text-sm text-gray-400">No clients found</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 bg-gray-50/60">
+                  <th className="w-10 px-4 py-3">
+                    <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Name <SortIcon />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Contact Email <SortIcon />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    ID Number <SortIcon />
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Balance <SortIcon />
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Paid to Date <SortIcon />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Date Created <SortIcon />
+                  </th>
+                  <th className="w-28 px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {clients.map((c) => (
+                  <tr key={c._id} className="hover:bg-gray-50/40 transition-colors">
+                    <td className="px-4 py-3">
+                      <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <Link
+                        href={`/admin/clients/${c._id}/edit`}
+                        className="font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                      >
+                        {c.name}
+                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <span className="flex items-center">
+                        {c.email}
+                        <CopyButton text={c.email} />
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">{c.idNumber || '—'}</td>
+                    <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.balance)}</td>
+                    <td className="px-4 py-3 text-right font-medium text-gray-900">{fmt(c.paidToDate)}</td>
+                    <td className="px-4 py-3 text-gray-500">{fmtDate(c.createdAt)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <ActionMenu items={[
+                        { label: 'Edit', onClick: () => router.push(`/admin/clients/${c._id}/edit`) },
+                        { label: 'Delete', onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }), danger: true },
+                      ]} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </>
-      )}
+        )}
+      </div>
+
+      {/* Pagination */}
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+        <span>Total results: {totalCount}</span>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setPage(1)}
+            disabled={page <= 1}
+            className="flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+          >
+            «
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+          >
+            ‹
+          </button>
+          <span className="px-3 py-1 text-sm font-medium">{page} / {totalPages}</span>
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+          >
+            ›
+          </button>
+          <button
+            onClick={() => setPage(totalPages)}
+            disabled={page >= totalPages}
+            className="flex h-8 w-8 items-center justify-center rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40"
+          >
+            »
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span>rows:</span>
+          <select
+            value={limit}
+            onChange={(e) => setLimit(Number(e.target.value))}
+            className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+          >
+            {LIMIT_OPTIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+      </div>
     </div>
   );
 }

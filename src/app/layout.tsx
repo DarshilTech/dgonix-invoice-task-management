@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'DGONIX CRM - Professional Invoice Management',
+  title: 'Welcome to Invoxa by Dgonix',
   description: 'Complete CRM and invoice management system with client portal',
   icons: {
-    icon: '/favicon.ico',
+    icon: '/favicon.svg',
   },
 };
 

@@ -22,7 +22,7 @@ export function middleware(request: NextRequest) {
   const token = request.cookies.get('token')?.value;
   const pathname = request.nextUrl.pathname;
 
-  const adminPublicRoutes = ['/login', '/signup', '/reset-password'];
+  const adminPublicRoutes = ['/login', '/signup', '/reset-password', '/verify-email'];
   const clientPublicRoutes = ['/client/login'];
 
   const isAdminPublic = adminPublicRoutes.some((r) => pathname.startsWith(r));

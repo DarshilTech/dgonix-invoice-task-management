@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { AppLogo } from '@/components/layout/AppLogo';
+import { useDocumentTitle } from '@/hooks/useDocumentTitle';
 
 export default function ResetPasswordPage() {
+  useDocumentTitle('Reset Password');
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -15,84 +17,96 @@ export default function ResetPasswordPage() {
     setError('');
     setMessage('');
     setIsLoading(true);
-
     try {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Request failed');
-        return;
-      }
-
-      setMessage('Password reset link has been sent to your email');
+      if (!res.ok) { setError(data.error || 'Request failed'); return; }
+      setMessage('Password reset link has been sent to your email.');
       setEmail('');
-    } catch (err) {
+    } catch {
       setError('An error occurred. Please try again.');
-      console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div>
-      <div className="card">
-        <div className="card-body">
-          <div className="mb-8 text-center">
-            <AppLogo className="mx-auto mb-6 h-16 w-auto max-w-[260px] object-contain" priority />
-            <h1 className="section-title">Reset Password</h1>
-            <p className="section-subtitle">Enter your email to receive a reset link</p>
+    <div className="overflow-hidden rounded-2xl shadow-2xl">
+      {/* Dark header with branding */}
+      <div className="flex flex-col items-center justify-center bg-sidebar px-8 py-4">
+        <AppLogo className="h-24 w-auto max-w-[280px] object-contain" priority />
+      </div>
+
+      {/* Subtitle strip */}
+      <div className="bg-gray-50 px-8 py-3 text-center text-sm text-gray-500 border-b border-gray-100">
+        No worries! We&apos;ll send you reset instructions.
+      </div>
+
+      {/* White form body */}
+      <div className="bg-white px-8 py-8">
+        <h1 className="mb-2 text-center text-2xl font-bold text-gray-900">Reset Password</h1>
+        <p className="mb-7 text-center text-sm text-gray-500">Enter your email to receive a reset link</p>
+
+        {error && (
+          <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {message && (
+          <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            {message}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <div className="mb-1.5 flex items-center gap-2 text-sm font-medium text-gray-600">
+              <EnvelopeIcon />
+              <span>Email Address</span>
+            </div>
+            <input
+              type="email"
+              name="email"
+              className="auth-input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+            />
           </div>
 
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
-            </div>
-          )}
-
-          {message && (
-            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              {message}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="label">Email</label>
-              <input
-                type="email"
-                className="input"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-              />
-            </div>
-
+          <div className="pt-1">
             <button
               type="submit"
               disabled={isLoading}
-              className="btn btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full rounded-xl bg-primary-600 py-3 text-sm font-semibold text-white transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isLoading ? 'Sending...' : 'Send Reset Link'}
+              {isLoading ? 'Sending…' : 'Send Reset Link'}
             </button>
-          </form>
-
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
-              <Link href="/login" className="font-semibold text-primary-600 hover:text-primary-700">
-                Back to login
-              </Link>
-            </p>
           </div>
-        </div>
+        </form>
+
+        <p className="mt-5 text-center text-sm text-gray-500">
+          Remember your password?{' '}
+          <Link href="/login" className="font-medium text-primary-600 hover:text-primary-700 underline underline-offset-2">
+            Back to Login
+          </Link>
+        </p>
       </div>
     </div>
+  );
+}
+
+function EnvelopeIcon() {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
   );
 }

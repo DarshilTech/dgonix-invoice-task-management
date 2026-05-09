@@ -1,24 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/db/connect';
-import { Client } from '@/lib/db/models';
+import { Client, Company } from '@/lib/db/models';
 import { verifyRequestAuth } from '@/lib/auth/middleware';
 import { updateClientSchema } from '@/lib/validation/client';
-import { getAccessibleTenantIds, requireTenantAccess } from '@/services/tenantAccess';
 
 async function findClientForUser(
   id: string,
   payload: NonNullable<ReturnType<typeof verifyRequestAuth>['payload']>
 ) {
-  const query: Record<string, any> = { _id: id };
-
   if (payload.role === 'admin') {
-    query.tenantId = { $in: getAccessibleTenantIds(payload) };
-  } else {
-    query.tenantId = payload.tenantId;
-    query._id = payload.clientId;
+    const ownedCompanies = await Company.find({ ownerId: payload.userId }).select('_id');
+    return Client.findOne({ _id: id, tenantId: { $in: ownedCompanies.map((c) => c._id) } });
   }
-
-  return Client.findOne(query);
+  if (id !== payload.clientId) return null;
+  return Client.findOne({ _id: id, tenantId: payload.tenantId });
 }
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
@@ -67,7 +62,13 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 
     const nextTenantId =
       validation.data.tenantId || validation.data.companyId || existing.tenantId.toString();
-    requireTenantAccess(auth.payload, nextTenantId);
+
+    if (nextTenantId !== existing.tenantId.toString()) {
+      const company = await Company.findOne({ _id: nextTenantId, ownerId: auth.payload.userId });
+      if (!company) {
+        return NextResponse.json({ success: false, error: 'Company not found' }, { status: 404 });
+      }
+    }
 
     const client = await Client.findByIdAndUpdate(
       params.id,
@@ -82,11 +83,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ success: true, data: client }, { status: 200 });
   } catch (error) {
     console.error('Update client error:', error);
-    const status = error instanceof Error && error.message === 'Forbidden' ? 403 : 500;
-    return NextResponse.json(
-      { success: false, error: status === 403 ? 'Forbidden' : 'Failed to update client' },
-      { status }
-    );
+    return NextResponse.json({ success: false, error: 'Failed to update client' }, { status: 500 });
   }
 }
 
