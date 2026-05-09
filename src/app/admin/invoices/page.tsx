@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Pagination } from '@/components/ui/Pagination';
+import { ActionMenu } from '@/components/ui/ActionMenu';
 
 interface Invoice {
   _id: string;
@@ -68,7 +69,6 @@ export default function AdminInvoicesPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(ALL_COL_KEYS));
-  const [openAction, setOpenAction] = useState<string | null>(null);
   const [showColMenu, setShowColMenu] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showLifecycleMenu, setShowLifecycleMenu] = useState(false);
@@ -82,11 +82,10 @@ export default function AdminInvoicesPage() {
       if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setShowColMenu(false);
       if (statusMenuRef.current && !statusMenuRef.current.contains(e.target as Node)) setShowStatusMenu(false);
       if (lifecycleMenuRef.current && !lifecycleMenuRef.current.contains(e.target as Node)) setShowLifecycleMenu(false);
-      if (openAction) setOpenAction(null);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [openAction]);
+  }, []);
 
   useEffect(() => { setPage(1); }, [statusFilter, lifecycle, filter]);
   useEffect(() => { fetchInvoices(); }, [statusFilter, lifecycle, page, limit]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -322,23 +321,23 @@ export default function AdminInvoicesPage() {
         visibleCols={visibleCols}
         emptyText="No invoices found"
         rowAction={(inv) => (
-          <div className="relative flex justify-end">
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); setOpenAction(openAction === inv._id ? null : inv._id); }}
-              className="flex items-center gap-1 rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700 transition-colors"
-            >
-              Actions
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-            </button>
-            {openAction === inv._id && (
-              <div className="absolute right-0 top-full z-10 mt-1 w-36 rounded-lg border border-gray-200 bg-white py-1 shadow-lg">
-                <Link href={`/admin/invoices/${inv._id}`} className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">View</Link>
-                <Link href={`/admin/invoices/${inv._id}/edit`} className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Edit</Link>
-                <a href={`/api/invoices/${inv._id}/pdf`} target="_blank" rel="noreferrer" className="block px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Download PDF</a>
-              </div>
-            )}
-          </div>
+          <ActionMenu items={[
+            {
+              label: 'View',
+              href: `/admin/invoices/${inv._id}`,
+              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>,
+            },
+            {
+              label: 'Edit',
+              href: `/admin/invoices/${inv._id}/edit`,
+              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>,
+            },
+            {
+              label: 'Download PDF',
+              href: `/api/invoices/${inv._id}/pdf`,
+              icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>,
+            },
+          ]} />
         )}
       />
 

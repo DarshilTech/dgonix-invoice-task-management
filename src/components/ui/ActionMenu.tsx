@@ -1,14 +1,15 @@
 'use client';
 
-import { Fragment } from 'react';
-import { Menu, Transition } from '@headlessui/react';
-import { ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ActionItem = {
-  label: string;
-  onClick: () => void;
+  label?: string;
+  onClick?: () => void;
+  href?: string;
+  icon?: React.ReactNode;
   danger?: boolean;
   disabled?: boolean;
+  separator?: boolean;
 };
 
 interface ActionMenuProps {
@@ -17,46 +18,97 @@ interface ActionMenuProps {
 }
 
 export function ActionMenu({ items, label = 'Actions' }: ActionMenuProps) {
-  return (
-    <Menu as="div" className="relative inline-block text-left">
-      <Menu.Button className="inline-flex items-center gap-1 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-1">
-        {label}
-        <ChevronDown className="h-3 w-3" aria-hidden="true" />
-      </Menu.Button>
+  const [open, setOpen] = useState(false);
+  const [style, setStyle] = useState<React.CSSProperties>({});
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-      <Transition
-        as={Fragment}
-        enter="transition ease-out duration-100"
-        enterFrom="transform opacity-0 scale-95"
-        enterTo="transform opacity-100 scale-100"
-        leave="transition ease-in duration-75"
-        leaveFrom="transform opacity-100 scale-100"
-        leaveTo="transform opacity-0 scale-95"
+  const openMenu = () => {
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const menuH = items.length * 38 + 8;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow < menuH ? r.top - menuH - 4 : r.bottom + 4;
+    setStyle({ position: 'fixed', top, right: window.innerWidth - r.right, zIndex: 9999 });
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (
+        !btnRef.current?.contains(e.target as Node) &&
+        !menuRef.current?.contains(e.target as Node)
+      ) setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener('mousedown', close);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={openMenu}
+        aria-haspopup="true"
+        aria-expanded={open}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500"
       >
-        <Menu.Items className="absolute right-0 z-30 mt-1 w-40 origin-top-right overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg ring-1 ring-black/5 focus:outline-none">
-          {items.map((item) => (
-            <Menu.Item key={item.label} disabled={item.disabled}>
-              {({ active }) => (
-                <button
-                  onClick={item.onClick}
-                  disabled={item.disabled}
-                  className={`flex w-full items-center px-4 py-2.5 text-sm transition-colors ${
-                    item.danger
-                      ? active
-                        ? 'bg-red-50 text-red-600'
-                        : 'text-red-500'
-                      : active
-                      ? 'bg-gray-50 text-gray-900'
-                      : 'text-gray-700'
-                  } ${item.disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-default'}`}
-                >
-                  {item.label}
-                </button>
-              )}
-            </Menu.Item>
-          ))}
-        </Menu.Items>
-      </Transition>
-    </Menu>
+        {label}
+        <svg
+          className={`h-3 w-3 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          ref={menuRef}
+          style={style}
+          role="menu"
+          className="w-44 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-xl ring-1 ring-black/5"
+        >
+          {items.map((item, i) =>
+            item.separator ? (
+              <div key={i} className="my-1 border-t border-gray-100" />
+            ) : item.href ? (
+              <a
+                key={item.label}
+                href={item.href}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                className={`flex w-full items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+                  item.danger ? 'text-red-500 hover:bg-red-50 hover:text-red-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                {item.icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center opacity-60">{item.icon}</span>}
+                {item.label}
+              </a>
+            ) : (
+              <button
+                key={item.label}
+                role="menuitem"
+                disabled={item.disabled}
+                onClick={() => { setOpen(false); item.onClick?.(); }}
+                className={`flex w-full items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+                  item.danger ? 'text-red-500 hover:bg-red-50 hover:text-red-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                } ${item.disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              >
+                {item.icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center opacity-60">{item.icon}</span>}
+                {item.label}
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </>
   );
 }

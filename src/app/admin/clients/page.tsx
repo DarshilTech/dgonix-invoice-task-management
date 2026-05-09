@@ -235,8 +235,18 @@ export default function AdminClientsPage() {
                     <td className="px-4 py-3 text-gray-500">{fmtDate(c.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <ActionMenu items={[
-                        { label: 'Edit', onClick: () => router.push(`/admin/clients/${c._id}/edit`) },
-                        { label: 'Delete', onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }), danger: true },
+                        {
+                          label: 'Edit',
+                          icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a2 2 0 01-1.414.586H9v-2a2 2 0 01.586-1.414z"/></svg>,
+                          onClick: () => router.push(`/admin/clients/${c._id}/edit`),
+                        },
+                        { separator: true },
+                        {
+                          label: 'Delete',
+                          icon: <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>,
+                          onClick: () => setConfirmModal({ open: true, clientId: c._id, clientName: c.name }),
+                          danger: true,
+                        },
                       ]} />
                     </td>
                   </tr>
